@@ -1,5 +1,7 @@
 {
-  "codeowners": ["@wenzelt"],
+  "codeowners": [
+    "@wenzelt"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/wenzelt/home-assistant-obi-energy-tracker",
   "domain": "obi_energy_tracker",
@@ -7,5 +9,5 @@
   "issue_tracker": "https://github.com/wenzelt/home-assistant-obi-energy-tracker/issues",
   "name": "OBI Energy Tracker",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
