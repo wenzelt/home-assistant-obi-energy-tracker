@@ -33,6 +33,19 @@ class OBIInvalidOTP(OBIAuthError):
     """Raised when the one-time password is rejected."""
 
 
+async def _async_json_response(
+    response: Any, *, context: str
+) -> Mapping[str, Any]:
+    """Decode JSON without requiring a standards-compliant Content-Type header."""
+    try:
+        payload = await response.json(content_type=None)
+    except (ClientError, ValueError) as err:
+        raise OBIAuthError(f"{context} returned invalid JSON") from err
+    if not isinstance(payload, Mapping):
+        raise OBIAuthError(f"{context} returned an unexpected JSON value")
+    return payload
+
+
 class OBIPasswordlessAuth:
     """Perform OBI's email + OTP Authorization Code/PKCE flow."""
 
@@ -152,11 +165,11 @@ class OBIPasswordlessAuth:
             )
             if response.status >= HTTPStatus.BAD_REQUEST:
                 raise OBIAuthError(f"Token exchange returned HTTP {response.status}")
-            token = await response.json()
+            token = await _async_json_response(response, context="OBI token endpoint")
         except ClientError as err:
             raise OBIConnectionError("Unable to complete OBI authentication") from err
 
-        if not isinstance(token, Mapping) or not token.get("access_token"):
+        if not token.get("access_token"):
             raise OBIAuthError("OBI token response did not include an access token")
 
         result = dict(token)
