@@ -1,0 +1,55 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Dieses OBI-Konto ist bereits konfiguriert.",
+      "reauth_successful": "Die erneute Authentifizierung war erfolgreich.",
+      "wrong_account": "Der Einmalcode wurde mit einem anderen OBI-Konto abgeschlossen."
+    },
+    "error": {
+      "api_error": "Die OBI-Energy-API hat eine unerwartete Antwort geliefert.",
+      "auth_start_failed": "OBI konnte die passwortlose Anmeldung für diese E-Mail-Adresse nicht starten.",
+      "cannot_connect": "Verbindung zu OBI nicht möglich.",
+      "invalid_auth": "OBI hat die Authentifizierungsanfrage abgelehnt.",
+      "invalid_otp": "Der Einmalcode ist ungültig oder abgelaufen."
+    },
+    "step": {
+      "otp": {
+        "data": {
+          "otp": "Einmalcode"
+        },
+        "description": "Gib den sechsstelligen Code ein, den OBI an {email} gesendet hat. Der Code ist fünf Minuten gültig.",
+        "title": "E-Mail-Code eingeben"
+      },
+      "reauth_confirm": {
+        "description": "Ein neuer Einmalcode wird an {email} gesendet.",
+        "title": "OBI ENERGY TRACKER neu verbinden"
+      },
+      "user": {
+        "data": {
+          "email": "heyOBI-E-Mail-Adresse"
+        },
+        "description": "Es ist kein Passwort, API-Schlüssel oder Client-Secret erforderlich. OBI sendet einen sechsstelligen Einmalcode an diese Adresse.",
+        "title": "OBI ENERGY TRACKER verbinden"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "online": {
+        "name": "Verbindung"
+      }
+    },
+    "sensor": {
+      "battery": {
+        "name": "Batterie"
+      },
+      "energy_export": {
+        "name": "Netzeinspeisung"
+      },
+      "energy_import": {
+        "name": "Netzbezug"
+      }
+    }
+  },
+  "title": "OBI ENERGY TRACKER"
+}
