@@ -20,6 +20,8 @@ from .const import (
 )
 from .util import compute_code_challenge, first_form_action, generate_code_verifier
 
+_AUTH_ORIGIN = URL(AUTHORIZE_URL).origin()
+
 
 class OBIAuthError(Exception):
     """Base exception for OBI authentication failures."""
@@ -44,6 +46,16 @@ async def _async_json_response(
     if not isinstance(payload, Mapping):
         raise OBIAuthError(f"{context} returned an unexpected JSON value")
     return payload
+
+
+def _validated_auth_url(base_url: str, location: str) -> str:
+    """Resolve an OBI authentication URL and reject unexpected origins."""
+    target = URL(urljoin(base_url, location))
+    if target.origin() != _AUTH_ORIGIN:
+        raise OBIAuthError(
+            f"OBI authentication redirected to an unexpected origin: {target.origin()}"
+        )
+    return str(target)
 
 
 class OBIPasswordlessAuth:
@@ -87,8 +99,9 @@ class OBIPasswordlessAuth:
             if not username_action:
                 raise OBIAuthError("OBI login page did not contain an email form")
 
+            username_url = _validated_auth_url(str(response.url), username_action)
             response = await self._session.post(
-                urljoin(str(response.url), username_action),
+                username_url,
                 data={"username": email},
                 cookies=self._cookies,
                 allow_redirects=True,
@@ -100,7 +113,7 @@ class OBIPasswordlessAuth:
             otp_action = first_form_action(html)
             if not otp_action:
                 raise OBIAuthError("OBI login page did not contain an OTP form")
-            self._otp_action = urljoin(str(response.url), otp_action)
+            self._otp_action = _validated_auth_url(str(response.url), otp_action)
         except ClientError as err:
             raise OBIConnectionError("Unable to contact OBI authentication service") from err
 
@@ -110,11 +123,16 @@ class OBIPasswordlessAuth:
             raise OBIAuthError("Authentication flow was not started")
 
         try:
+            # Home Assistant's shared session blocks any response containing an
+            # absolute redirect to localhost, even with allow_redirects=False.
+            # OBI intentionally returns that OAuth callback. Request-scoped empty
+            # middleware lets us inspect the Location header without following it.
             response = await self._session.post(
                 self._otp_action,
                 data={"code": otp},
                 cookies=self._cookies,
                 allow_redirects=False,
+                middlewares=(),
             )
             self._collect_cookies([response])
 
@@ -127,7 +145,7 @@ class OBIPasswordlessAuth:
                     html = await response.text()
                     action = first_form_action(html)
                     if action:
-                        self._otp_action = urljoin(str(response.url), action)
+                        self._otp_action = _validated_auth_url(str(response.url), action)
                 raise OBIInvalidOTP("The one-time code was rejected or expired")
 
             current_url = str(response.url)
@@ -136,11 +154,13 @@ class OBIPasswordlessAuth:
                 redirects += 1
                 if redirects > 10:
                     raise OBIAuthError("Too many redirects during OBI login")
-                next_url = urljoin(current_url, location)
+
+                next_url = _validated_auth_url(current_url, location)
                 response = await self._session.get(
                     next_url,
                     cookies=self._cookies,
                     allow_redirects=False,
+                    middlewares=(),
                 )
                 self._collect_cookies([response])
                 current_url = str(response.url)
