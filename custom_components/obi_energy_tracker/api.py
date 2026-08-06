@@ -41,6 +41,19 @@ class OBIEnergyResponseError(OBIEnergyError):
     """Raised for malformed or unsuccessful API responses."""
 
 
+async def _async_json_response(
+    response: Any, *, context: str
+) -> dict[str, Any]:
+    """Decode JSON without requiring a standards-compliant Content-Type header."""
+    try:
+        payload = await response.json(content_type=None)
+    except (ClientError, ValueError) as err:
+        raise OBIEnergyResponseError(f"{context} returned invalid JSON") from err
+    if not isinstance(payload, dict):
+        raise OBIEnergyResponseError(f"{context} returned an unexpected JSON value")
+    return payload
+
+
 class OBIEnergyApi:
     """OBI Energy Tracker API client with refresh-token handling."""
 
@@ -96,8 +109,10 @@ class OBIEnergyApi:
                     f"OBI token endpoint returned HTTP {response.status}"
                 )
 
-            payload = await response.json()
-            if not isinstance(payload, Mapping) or not payload.get("access_token"):
+            payload = await _async_json_response(
+                response, context="OBI token refresh endpoint"
+            )
+            if not payload.get("access_token"):
                 raise OBIEnergyResponseError("Malformed token refresh response")
 
             updated = {**self._token, **dict(payload)}
@@ -152,10 +167,9 @@ class OBIEnergyApi:
                     f"OBI Energy API returned HTTP {response.status} for {path}"
                 )
 
-            payload = await response.json()
-            if not isinstance(payload, dict):
-                raise OBIEnergyResponseError("OBI Energy API returned malformed JSON")
-            return payload
+            return await _async_json_response(
+                response, context=f"OBI Energy API {path}"
+            )
 
         raise OBIEnergyAuthError("OBI authentication failed after token refresh")
 
