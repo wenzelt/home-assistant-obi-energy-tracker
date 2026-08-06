@@ -71,11 +71,28 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user = await api.async_get_user()
             except OBIInvalidOTP:
                 errors["base"] = "invalid_otp"
-            except (OBIConnectionError, OBIEnergyConnectionError):
+            except OBIConnectionError as err:
+                _LOGGER.warning(
+                    "Connection failed while completing OBI passwordless login: %s",
+                    err,
+                    exc_info=True,
+                )
                 errors["base"] = "cannot_connect"
-            except (OBIAuthError, OBIEnergyAuthError):
+            except OBIEnergyConnectionError as err:
+                _LOGGER.warning(
+                    "OBI login completed, but the Energy API connection failed: %s",
+                    err,
+                    exc_info=True,
+                )
+                errors["base"] = "cannot_connect"
+            except OBIAuthError as err:
+                _LOGGER.warning("OBI authentication failed: %s", err, exc_info=True)
                 errors["base"] = "invalid_auth"
-            except OBIEnergyError:
+            except OBIEnergyAuthError as err:
+                _LOGGER.warning("OBI Energy API rejected the token: %s", err)
+                errors["base"] = "invalid_auth"
+            except OBIEnergyError as err:
+                _LOGGER.warning("OBI Energy API setup failed: %s", err, exc_info=True)
                 errors["base"] = "api_error"
             else:
                 return await self._async_complete(self._email, token, user)
