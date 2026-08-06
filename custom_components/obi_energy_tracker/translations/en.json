@@ -1,0 +1,55 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This OBI account is already configured.",
+      "reauth_successful": "Reauthentication was successful.",
+      "wrong_account": "The OTP was completed with a different OBI account."
+    },
+    "error": {
+      "api_error": "The OBI Energy API returned an unexpected response.",
+      "auth_start_failed": "OBI could not start passwordless login for this email address.",
+      "cannot_connect": "Unable to connect to OBI.",
+      "invalid_auth": "OBI rejected the authentication request.",
+      "invalid_otp": "The one-time code is invalid or expired."
+    },
+    "step": {
+      "otp": {
+        "data": {
+          "otp": "One-time code"
+        },
+        "description": "Enter the six-character code sent by OBI to {email}. The code is valid for five minutes.",
+        "title": "Enter email code"
+      },
+      "reauth_confirm": {
+        "description": "A new one-time code will be sent to {email}.",
+        "title": "Reconnect OBI Energy Tracker"
+      },
+      "user": {
+        "data": {
+          "email": "heyOBI email address"
+        },
+        "description": "No password, API key, or client secret is required. OBI sends a six-character one-time code to this address.",
+        "title": "Connect OBI Energy Tracker"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "online": {
+        "name": "Connection"
+      }
+    },
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "energy_export": {
+        "name": "Grid export"
+      },
+      "energy_import": {
+        "name": "Grid consumption"
+      }
+    }
+  },
+  "title": "OBI Energy Tracker"
+}
