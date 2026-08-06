@@ -110,6 +110,45 @@ async def test_async_start_http_error_status_raises_auth_error(session) -> None:
         await auth.async_start("user@example.test")
 
 
+async def test_async_start_email_submission_http_error_raises_auth_error(session) -> None:
+    """A non-2xx response to the email submission is an auth failure."""
+    session.queue_response(
+        "GET", AUTHORIZE_URL, FakeResponse(text_body=email_form_html(), url=AUTHORIZE_URL)
+    )
+    session.queue_response("POST", EMAIL_FORM_URL, FakeResponse(status=500, url=EMAIL_FORM_URL))
+    auth = OBIPasswordlessAuth(session)
+
+    with pytest.raises(OBIAuthError):
+        await auth.async_start("user@example.test")
+
+
+async def test_async_start_collects_cookies_from_each_hop(session) -> None:
+    """Session cookies set along the authorize/email hops must carry forward."""
+    session.queue_response(
+        "GET",
+        AUTHORIZE_URL,
+        FakeResponse(
+            text_body=email_form_html(),
+            url=AUTHORIZE_URL,
+            cookies={"AUTH_SESSION_ID": "sess-1"},
+        ),
+    )
+    session.queue_response(
+        "POST",
+        EMAIL_FORM_URL,
+        FakeResponse(
+            text_body=otp_form_html(),
+            url=EMAIL_FORM_URL,
+            cookies={"KC_RESTART": "restart-1"},
+        ),
+    )
+    auth = OBIPasswordlessAuth(session)
+
+    await auth.async_start("user@example.test")
+
+    assert auth._cookies == {"AUTH_SESSION_ID": "sess-1", "KC_RESTART": "restart-1"}
+
+
 async def test_async_start_network_failure_raises_connection_error(session) -> None:
     """A network drop while starting login must map to cannot_connect, not crash."""
     session.queue_error("GET", AUTHORIZE_URL, ClientConnectionError())
@@ -282,6 +321,22 @@ async def test_async_finish_rejected_authorization_code_is_auth_error_not_invali
 
 
 # --- async_finish: malformed redirect / callback --------------------------
+
+
+async def test_async_finish_invalid_json_token_response_raises_auth_error(
+    session,
+) -> None:
+    """A non-JSON token exchange response must not propagate a raw parse error."""
+    auth = await start_flow(session)
+    session.queue_response(
+        "POST",
+        OTP_FORM_URL,
+        FakeResponse(status=302, headers={"Location": f"{CALLBACK_URL}?code=abc"}, url=OTP_FORM_URL),
+    )
+    session.queue_response("POST", TOKEN_URL, FakeResponse(status=200))
+
+    with pytest.raises(OBIAuthError):
+        await auth.async_finish("123456")
 
 
 async def test_async_finish_too_many_redirects_raises_auth_error(session) -> None:

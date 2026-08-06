@@ -3,6 +3,8 @@
 from pathlib import Path
 import importlib.util
 
+import pytest
+
 MODULE_PATH = (
     Path(__file__).parents[1]
     / "custom_components"
@@ -20,6 +22,18 @@ def test_pkce() -> None:
     assert 43 <= len(verifier) <= 128
     challenge = obi_util.compute_code_challenge(verifier)
     assert "=" not in challenge
+
+
+def test_generate_code_verifier_rejects_out_of_range_length() -> None:
+    with pytest.raises(ValueError):
+        obi_util.generate_code_verifier(length=42)
+    with pytest.raises(ValueError):
+        obi_util.generate_code_verifier(length=129)
+
+
+def test_compute_code_challenge_rejects_out_of_range_verifier() -> None:
+    with pytest.raises(ValueError):
+        obi_util.compute_code_challenge("short")
 
 
 def test_form_action() -> None:

@@ -12,6 +12,7 @@ import time
 from aiohttp import ClientConnectionError
 import pytest
 
+
 from conftest import FakeResponse, FakeSession, import_submodule
 
 api_module = import_submodule("api")
@@ -293,6 +294,106 @@ async def test_network_failure_raises_connection_error(session) -> None:
 
     with pytest.raises(OBIEnergyConnectionError):
         await api.async_get_user()
+
+
+async def test_refresh_network_failure_raises_connection_error(session) -> None:
+    """A dropped connection during token refresh must not raise a raw ClientError."""
+    token = fresh_token(expires_at=time.time() - 5)
+    session.queue_error("POST", const.TOKEN_URL, ClientConnectionError())
+    api = OBIEnergyApi(session, token)
+
+    with pytest.raises(OBIEnergyConnectionError):
+        await api.async_get_user()
+
+
+async def test_refresh_response_without_access_token_raises_response_error(
+    session,
+) -> None:
+    """A 2xx refresh response missing access_token is a malformed contract."""
+    token = fresh_token(expires_at=time.time() - 5)
+    session.queue_response(
+        "POST", const.TOKEN_URL, FakeResponse(json_payload={"token_type": "Bearer"})
+    )
+    api = OBIEnergyApi(session, token)
+
+    with pytest.raises(OBIEnergyResponseError):
+        await api.async_get_user()
+
+
+async def test_refresh_response_invalid_json_raises_response_error(session) -> None:
+    """A non-JSON refresh response body must not propagate a raw parse error."""
+    token = fresh_token(expires_at=time.time() - 5)
+    session.queue_response("POST", const.TOKEN_URL, FakeResponse(status=200))
+    api = OBIEnergyApi(session, token)
+
+    with pytest.raises(OBIEnergyResponseError):
+        await api.async_get_user()
+
+
+async def test_missing_access_token_without_expiry_raises_auth_error(session) -> None:
+    """A token dict with no access_token and no expiry info still can't authenticate."""
+    token = {"refresh_token": "refresh-1"}
+    api = OBIEnergyApi(session, token)
+
+    with pytest.raises(OBIEnergyAuthError):
+        await api.async_get_user()
+    assert not session.calls
+
+
+async def test_non_numeric_expires_at_is_treated_as_expiring(session) -> None:
+    """A corrupted expires_at value must not be trusted; force a refresh instead."""
+    token = fresh_token(expires_at="not-a-number")
+    session.queue_response(
+        "POST",
+        const.TOKEN_URL,
+        FakeResponse(
+            json_payload={
+                "access_token": "access-5",
+                "refresh_token": "refresh-5",
+                "expires_in": 3600,
+            }
+        ),
+    )
+    session.queue_response("GET", USER_URL, FakeResponse(json_payload=user_payload()))
+    api = OBIEnergyApi(session, token)
+
+    await api.async_get_user()
+
+    assert api.token["access_token"] == "access-5"
+
+
+async def test_missing_expires_at_is_not_treated_as_expiring(session) -> None:
+    """A token with no expiry information at all should not force a refresh."""
+    token = fresh_token()
+    del token["expires_at"]
+    session.queue_response("GET", USER_URL, FakeResponse(json_payload=user_payload()))
+    api = OBIEnergyApi(session, token)
+
+    await api.async_get_user()
+
+    assert len(session.calls) == 1
+    assert session.calls[0].method == "GET"
+
+
+async def test_malformed_device_entries_are_skipped(session) -> None:
+    """Non-string device ids and non-list record lists must be ignored, not crash."""
+    session.queue_response(
+        "GET",
+        MEASURES_URL,
+        FakeResponse(
+            json_payload={
+                "devices": {
+                    "sensor-1": [{"time": "2024-08-19 00:00:00.000000000", "value": 1}],
+                    "sensor-2": "not-a-list",
+                }
+            }
+        ),
+    )
+    api = OBIEnergyApi(session, fresh_token())
+
+    result = await api.async_get_latest_measure(BRIDGE_ID, "energy")
+
+    assert set(result) == {"sensor-1"}
 
 
 async def test_vendor_content_type_body_without_json_content_type_is_parsed(
