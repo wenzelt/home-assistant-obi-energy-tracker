@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from http import HTTPStatus
+import logging
 import time
 from typing import Any
 from urllib.parse import urljoin
@@ -21,6 +22,7 @@ from .const import (
 from .util import compute_code_challenge, first_form_action, generate_code_verifier
 
 _AUTH_ORIGIN = URL(AUTHORIZE_URL).origin()
+_LOGGER = logging.getLogger(__name__)
 
 
 class OBIAuthError(Exception):
@@ -196,4 +198,12 @@ class OBIPasswordlessAuth:
         if "expires_in" in result:
             result["expires_in"] = int(result["expires_in"])
             result["expires_at"] = time.time() + result["expires_in"]
+
+        # Log only non-secret token metadata so long-running auth can be diagnosed.
+        _LOGGER.info(
+            "OBI token obtained: scope=%s, access_expires_in=%s, refresh_expires_in=%s",
+            result.get("scope"),
+            result.get("expires_in"),
+            result.get("refresh_expires_in"),
+        )
         return result
