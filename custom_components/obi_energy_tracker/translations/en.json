@@ -21,7 +21,7 @@
         "title": "Enter email code"
       },
       "reauth_confirm": {
-        "description": "A new one-time code will be sent to {email}.",
+        "description": "Press Submit to request a new one-time code from OBI for {email}.",
         "title": "Reconnect OBI Energy Tracker"
       },
       "user": {
