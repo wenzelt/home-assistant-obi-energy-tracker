@@ -21,7 +21,7 @@
         "title": "E-Mail-Code eingeben"
       },
       "reauth_confirm": {
-        "description": "Ein neuer Einmalcode wird an {email} gesendet.",
+        "description": "Klicke auf Senden, um einen neuen Einmalcode von OBI für {email} anzufordern.",
         "title": "OBI ENERGY TRACKER neu verbinden"
       },
       "user": {
