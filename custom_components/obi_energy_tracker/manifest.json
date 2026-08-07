@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/wenzelt/home-assistant-obi-energy-tracker/issues",
   "name": "OBI Energy Tracker",
   "requirements": [],
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
