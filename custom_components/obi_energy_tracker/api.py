@@ -103,6 +103,12 @@ class OBIEnergyApi:
                 raise OBIEnergyConnectionError("Unable to refresh OBI token") from err
 
             if response.status in (HTTPStatus.BAD_REQUEST, HTTPStatus.UNAUTHORIZED):
+                _LOGGER.warning(
+                    "OBI refresh token was rejected (HTTP %s); current scope=%s, refresh_expires_in=%s",
+                    response.status,
+                    self._token.get("scope"),
+                    self._token.get("refresh_expires_in"),
+                )
                 raise OBIEnergyAuthError("OBI refresh token was rejected")
             if response.status >= HTTPStatus.BAD_REQUEST:
                 raise OBIEnergyConnectionError(
@@ -115,6 +121,8 @@ class OBIEnergyApi:
             if not payload.get("access_token"):
                 raise OBIEnergyResponseError("Malformed token refresh response")
 
+            # Keycloak may rotate the refresh token. Merge and persist the complete
+            # response immediately so the newest refresh token survives restarts.
             updated = {**self._token, **dict(payload)}
             if "expires_in" in updated:
                 updated["expires_in"] = int(updated["expires_in"])
@@ -122,6 +130,13 @@ class OBIEnergyApi:
             self._token = updated
             if self._token_update_callback:
                 self._token_update_callback(dict(updated))
+
+            _LOGGER.debug(
+                "OBI token refreshed: scope=%s, access_expires_in=%s, refresh_expires_in=%s",
+                updated.get("scope"),
+                updated.get("expires_in"),
+                updated.get("refresh_expires_in"),
+            )
 
     async def _async_request_json(
         self,
