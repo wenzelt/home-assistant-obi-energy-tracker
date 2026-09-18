@@ -178,13 +178,13 @@ async def test_restart_clears_stale_pending_otp_and_cookies():
     assert flow._otp_hidden == {}
 
 
-async def test_offline_scope_is_retained_and_no_silent_retry():
+async def test_documented_scope_is_used_and_no_silent_retry():
     session = FakeSession()
     session.queue_response("GET", const.AUTHORIZE_URL, FakeResponse(status=400))
     with pytest.raises(auth.OBIAuthError):
         await auth.OBIPasswordlessAuth(session).async_start("user@example.test")
     assert len(session.calls) == 1
-    assert session.calls[0].kwargs["params"]["scope"] == "openid offline_access"
+    assert session.calls[0].kwargs["params"]["scope"] == "openid"
 
 
 async def test_unrelated_page_after_otp_is_not_reported_as_invalid_code():

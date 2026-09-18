@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
-from http import HTTPStatus
 import logging
 import time
+from collections.abc import Callable, Mapping
+from http import HTTPStatus
 from typing import Any
 
 from aiohttp import ClientError, ClientSession
@@ -41,9 +41,7 @@ class OBIEnergyResponseError(OBIEnergyError):
     """Raised for malformed or unsuccessful API responses."""
 
 
-async def _async_json_response(
-    response: Any, *, context: str
-) -> dict[str, Any]:
+async def _async_json_response(response: Any, *, context: str) -> dict[str, Any]:
     """Decode JSON without requiring a standards-compliant Content-Type header."""
     try:
         payload = await response.json(content_type=None)
@@ -104,7 +102,8 @@ class OBIEnergyApi:
 
             if response.status in (HTTPStatus.BAD_REQUEST, HTTPStatus.UNAUTHORIZED):
                 _LOGGER.warning(
-                    "OBI refresh token was rejected (HTTP %s); current scope=%s, refresh_expires_in=%s",
+                    "OBI refresh token was rejected (HTTP %s); "
+                    "current scope=%s, refresh_expires_in=%s",
                     response.status,
                     self._token.get("scope"),
                     self._token.get("refresh_expires_in"),
@@ -132,7 +131,8 @@ class OBIEnergyApi:
                 self._token_update_callback(dict(updated))
 
             _LOGGER.debug(
-                "OBI token refreshed: scope=%s, access_expires_in=%s, refresh_expires_in=%s",
+                "OBI token refreshed: scope=%s, access_expires_in=%s, "
+                "refresh_expires_in=%s",
                 updated.get("scope"),
                 updated.get("expires_in"),
                 updated.get("refresh_expires_in"),
@@ -165,17 +165,24 @@ class OBIEnergyApi:
                     },
                 )
             except ClientError as err:
-                raise OBIEnergyConnectionError("Unable to contact OBI Energy API") from err
+                raise OBIEnergyConnectionError(
+                    "Unable to contact OBI Energy API"
+                ) from err
 
             if response.status == HTTPStatus.UNAUTHORIZED and attempt == 0:
                 response.release()
                 await self._async_refresh_token(force=True)
                 continue
-            if response.status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            if response.status == HTTPStatus.UNAUTHORIZED:
                 response.release()
                 raise OBIEnergyAuthError(
                     f"OBI Energy API rejected authentication ({response.status})"
                 )
+            if response.status == HTTPStatus.FORBIDDEN:
+                response.release()
+                # The contract distinguishes forbidden access from an invalid
+                # token. Reauthenticating is not a general remedy for HTTP 403.
+                raise OBIEnergyResponseError("OBI Energy API access is forbidden (403)")
             if response.status >= HTTPStatus.BAD_REQUEST:
                 response.release()
                 raise OBIEnergyResponseError(
@@ -190,9 +197,7 @@ class OBIEnergyApi:
 
     async def async_get_user(self) -> dict[str, Any]:
         """Return the authenticated user and paired bridge/sensors."""
-        return await self._async_request_json(
-            "GET", "/users/me", accept=USER_ACCEPT
-        )
+        return await self._async_request_json("GET", "/users/me", accept=USER_ACCEPT)
 
     async def async_get_latest_measure(
         self,

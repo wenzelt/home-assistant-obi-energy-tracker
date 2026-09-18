@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import time
 
-from aiohttp import ClientConnectionError
 import pytest
-
-
+from aiohttp import ClientConnectionError
 from conftest import FakeResponse, FakeSession, import_submodule
 
 api_module = import_submodule("api")
@@ -98,9 +96,7 @@ def session() -> FakeSession:
 
 async def test_async_get_user_uses_versioned_accept_header(session) -> None:
     """GET /users/me must send the vendor v2 Accept header and bearer token."""
-    session.queue_response(
-        "GET", USER_URL, FakeResponse(json_payload=user_payload())
-    )
+    session.queue_response("GET", USER_URL, FakeResponse(json_payload=user_payload()))
     api = OBIEnergyApi(session, fresh_token())
 
     user = await api.async_get_user()
@@ -132,7 +128,9 @@ async def test_async_get_latest_measure_returns_newest_record_per_device(
 
 async def test_async_get_latest_measure_rejects_missing_devices_key(session) -> None:
     """A response without a top-level devices object violates the contract."""
-    session.queue_response("GET", MEASURES_URL, FakeResponse(json_payload={"nope": True}))
+    session.queue_response(
+        "GET", MEASURES_URL, FakeResponse(json_payload={"nope": True})
+    )
     api = OBIEnergyApi(session, fresh_token())
 
     with pytest.raises(OBIEnergyResponseError):
@@ -259,12 +257,12 @@ async def test_401_after_retry_raises_auth_error(session) -> None:
         await api.async_get_user()
 
 
-async def test_forbidden_response_raises_auth_error_without_retry(session) -> None:
-    """403 is a real authorization failure and must not trigger a refresh loop."""
+async def test_forbidden_response_raises_response_error_without_retry(session) -> None:
+    """403 must not be presented as an expired credential or trigger refresh."""
     session.queue_response("GET", USER_URL, FakeResponse(status=403))
     api = OBIEnergyApi(session, fresh_token())
 
-    with pytest.raises(OBIEnergyAuthError):
+    with pytest.raises(OBIEnergyResponseError, match="forbidden"):
         await api.async_get_user()
     assert len(session.calls) == 1
 
@@ -288,7 +286,7 @@ async def test_non_dict_json_payload_raises_response_error(session) -> None:
 
 
 async def test_network_failure_raises_connection_error(session) -> None:
-    """A dropped connection must surface as OBIEnergyConnectionError, not raw ClientError."""
+    """A dropped connection must surface as OBIEnergyConnectionError."""
     session.queue_error("GET", USER_URL, ClientConnectionError())
     api = OBIEnergyApi(session, fresh_token())
 

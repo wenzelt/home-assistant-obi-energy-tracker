@@ -14,9 +14,9 @@ AUTHORIZE_URL = f"{AUTH_BASE_URL}/auth"
 TOKEN_URL = f"{AUTH_BASE_URL}/token"
 CLIENT_ID = "home-assistant-user"
 REDIRECT_URI = "http://localhost/callback"
-# Request a Keycloak offline session so the integration can refresh tokens
-# without requiring a new email OTP when the normal login session expires.
-OAUTH_SCOPE = "openid offline_access"
+# Match the login example in docs/openapi-public.json. Offline access is not
+# documented for this client; do not assume the server grants that scope.
+OAUTH_SCOPE = "openid"
 
 USER_ACCEPT = "application/vnd.obi.companion.energy-tracking.user.v2+json"
 HISTORY_ACCEPT = (

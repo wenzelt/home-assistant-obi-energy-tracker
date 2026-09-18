@@ -57,19 +57,21 @@ evidence of an incorrect email address. For 429, wait before requesting another
 code; do not repeatedly press Submit. A missing OTP form can indicate that OBI
 returned the email page, changed its login flow, or rejected the request.
 
-The integration requests `openid offline_access`. This is a request for a
-long-lived session, **not a guarantee** that OBI grants one or that it never
-expires. Keycloak's offline sessions depend on server configuration and can
-expire after inactivity or be revoked. See the
-[Keycloak offline-access documentation](https://www.keycloak.org/docs/latest/server_admin/index.html#_offline-access).
-Updating from an older integration version does not upgrade already-issued
-tokens. A new successful login is needed to request the new scope.
+New logins request `openid`, matching the example in the supplied
+[API specification](docs/openapi-public.json). Version 0.1.3 requested the
+additional `offline_access` scope, which is not documented by this spec.
+This alignment does not prove that OBI rejects offline access. Existing saved
+tokens are not discarded or rewritten by the scope change, and refresh-token
+rotation remains supported. Ordinary sessions may eventually need a new OTP;
+the spec does not define refresh-token or offline-session lifetimes.
 
 When reporting a failure, include the integration and Home Assistant versions,
 whether the official OBI app still works, and the warning above. Do not upload
 tokens, OTPs, `.storage`, raw HTTP traces, or full backups. The generic login-start
-error alone cannot establish that `offline_access` is unsupported; changing scopes
-without evidence can remove persistent sessions without fixing the actual problem.
+error alone cannot establish that `offline_access` is unsupported. HTTP 403 means
+forbidden access, not necessarily token expiration; it is reported as an API
+error instead of requesting another login. HTTP 401 still refreshes once and
+requests reauthentication if credentials remain invalid.
 
 ## Energy Dashboard
 
@@ -79,11 +81,16 @@ After the first successful update:
 2. Under **Electricity grid**, select the OBI **Grid consumption** sensor for consumption.
 3. For photovoltaic export, select the OBI **Grid export** sensor under return to grid.
 
-The API counters are interpreted as cumulative Wh meter readings and converted to kWh. The original Wh value and measurement timestamp are retained as entity attributes.
+The integration interprets API values as cumulative Wh meter readings and
+converts them to kWh. **The supplied spec does not define the energy unit or
+whether values are cumulative.** This existing interpretation must be checked
+against the meter/OBI app before relying on Energy Dashboard totals. The raw
+value (currently labelled `raw_value_wh`) and measurement timestamp are retained
+as entity attributes; that label is not independent evidence of the unit.
 
 ## API contract
 
-The implementation follows the included `docs/openapi-public.json` contract:
+The implementation is checked against the included [API contract](docs/openapi-public.json):
 
 - `GET /users/me`
 - `GET /historical-data/{bridgeId}/measures`
@@ -91,6 +98,11 @@ The implementation follows the included `docs/openapi-public.json` contract:
 - Vendor-specific v2 `Accept` media types
 
 Import (`energy`) and export (`negative_energy`) are requested separately because the published response schema does not include a measure name in each record.
+
+See the [contract audit](docs/testing/openapi-audit-2026-09-18.md) for the complete
+mapping, spec ambiguities, and the boundary between automated checks and live
+Home Assistant validation. Contract tests load the actual checked-in spec rather
+than comparing implementation constants only with copies of themselves.
 
 ## Security
 
