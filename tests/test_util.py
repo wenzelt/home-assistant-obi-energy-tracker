@@ -1,20 +1,9 @@
 """Tests for pure OBI utility helpers."""
 
-from pathlib import Path
-import importlib.util
-
 import pytest
+from conftest import import_submodule
 
-MODULE_PATH = (
-    Path(__file__).parents[1]
-    / "custom_components"
-    / "obi_energy_tracker"
-    / "util.py"
-)
-spec = importlib.util.spec_from_file_location("obi_util", MODULE_PATH)
-assert spec and spec.loader
-obi_util = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(obi_util)
+obi_util = import_submodule("util")
 
 
 def test_pkce() -> None:

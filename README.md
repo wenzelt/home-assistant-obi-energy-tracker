@@ -42,6 +42,35 @@ During setup, the integration asks for your heyOBI email address and then the OT
 
 Copy `custom_components/obi_energy_tracker` into your Home Assistant configuration directory under `custom_components/`, then restart Home Assistant.
 
+## Reconnecting and diagnosing login failures
+
+A reconnect prompt means the integration could not continue using the saved
+credentials. It does not prove why they became unusable: expiration, revocation,
+and rejected refresh requests need to be distinguished using the logs.
+
+If requesting a new email code fails, look in **Settings → System → Logs** for
+`OBI login start failed`. The warning identifies the failed stage (authorization
+page, email submission, or missing expected form) and HTTP status when available.
+It deliberately excludes email addresses, HTML bodies, cookies, and login URLs.
+HTTP 408, 429, and 5xx responses are temporary connection/service failures, not
+evidence of an incorrect email address. For 429, wait before requesting another
+code; do not repeatedly press Submit. A missing OTP form can indicate that OBI
+returned the email page, changed its login flow, or rejected the request.
+
+The integration requests `openid offline_access`. This is a request for a
+long-lived session, **not a guarantee** that OBI grants one or that it never
+expires. Keycloak's offline sessions depend on server configuration and can
+expire after inactivity or be revoked. See the
+[Keycloak offline-access documentation](https://www.keycloak.org/docs/latest/server_admin/index.html#_offline-access).
+Updating from an older integration version does not upgrade already-issued
+tokens. A new successful login is needed to request the new scope.
+
+When reporting a failure, include the integration and Home Assistant versions,
+whether the official OBI app still works, and the warning above. Do not upload
+tokens, OTPs, `.storage`, raw HTTP traces, or full backups. The generic login-start
+error alone cannot establish that `offline_access` is unsupported; changing scopes
+without evidence can remove persistent sessions without fixing the actual problem.
+
 ## Energy Dashboard
 
 After the first successful update:
@@ -79,7 +108,12 @@ Import (`energy`) and export (`negative_energy`) are requested separately becaus
 
 ## Development
 
-The repository includes HACS and Hassfest validation workflows. Before publishing a release, verify login, refresh-token rotation, both energy counters, and long-term statistics on a real Home Assistant instance.
+The repository includes unit-test, HACS, and Hassfest validation workflows.
+Run the HA-independent tests locally with `python -m pip install -r requirements-test.txt`
+and `python -m pytest -q`. These use HTTP test doubles and do not prove compatibility
+with OBI's live service or exercise Home Assistant's config-flow runtime.
+Before publishing a release, verify login, refresh-token rotation, both energy
+counters, and long-term statistics on a real Home Assistant instance.
 
 ## License
 

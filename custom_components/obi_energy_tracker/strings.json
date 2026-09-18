@@ -7,7 +7,7 @@
     },
     "error": {
       "api_error": "The OBI Energy API returned an unexpected response.",
-      "auth_start_failed": "OBI could not start passwordless login for this email address.",
+      "auth_start_failed": "OBI could not start passwordless login. Check the Home Assistant logs for the failing step; this does not necessarily mean the email address is incorrect.",
       "cannot_connect": "Unable to connect to OBI.",
       "invalid_auth": "OBI rejected the authentication request.",
       "invalid_otp": "The one-time code is invalid or expired."
