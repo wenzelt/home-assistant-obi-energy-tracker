@@ -103,6 +103,8 @@ The original attachment and checked-in file are byte-identical (`cmp` passed).
 The previous PR revision passed its GitHub unit-test job, but Hassfest reported
 incorrect manifest key order (domain, name, then alphabetical); this revision
 corrects that ordering without changing manifest values. HACS also reported
-missing repository description, topics, and brand assets. Those publishing
-metadata requirements are outside this API-contract change and remain open;
-the workflow has not been weakened or configured to ignore them.
+missing repository description, topics, and brand assets. Original, neutral
+energy-tracker brand assets now satisfy the in-repository requirement without
+using OBI's trademarked logo. The owner must still set the GitHub repository
+description and topics; those settings cannot be expressed in a commit. The
+workflow has not been weakened or configured to ignore any requirement.
