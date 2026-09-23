@@ -42,6 +42,37 @@ During setup, the integration asks for your heyOBI email address and then the OT
 
 Copy `custom_components/obi_energy_tracker` into your Home Assistant configuration directory under `custom_components/`, then restart Home Assistant.
 
+## Reconnecting and diagnosing login failures
+
+A reconnect prompt means the integration could not continue using the saved
+credentials. It does not prove why they became unusable: expiration, revocation,
+and rejected refresh requests need to be distinguished using the logs.
+
+If requesting a new email code fails, look in **Settings → System → Logs** for
+`OBI login start failed`. The warning identifies the failed stage (authorization
+page, email submission, or missing expected form) and HTTP status when available.
+It deliberately excludes email addresses, HTML bodies, cookies, and login URLs.
+HTTP 408, 429, and 5xx responses are temporary connection/service failures, not
+evidence of an incorrect email address. For 429, wait before requesting another
+code; do not repeatedly press Submit. A missing OTP form can indicate that OBI
+returned the email page, changed its login flow, or rejected the request.
+
+New logins request `openid`, matching the example in the supplied
+[API specification](docs/openapi-public.json). Version 0.1.3 requested the
+additional `offline_access` scope, which is not documented by this spec.
+This alignment does not prove that OBI rejects offline access. Existing saved
+tokens are not discarded or rewritten by the scope change, and refresh-token
+rotation remains supported. Ordinary sessions may eventually need a new OTP;
+the spec does not define refresh-token or offline-session lifetimes.
+
+When reporting a failure, include the integration and Home Assistant versions,
+whether the official OBI app still works, and the warning above. Do not upload
+tokens, OTPs, `.storage`, raw HTTP traces, or full backups. The generic login-start
+error alone cannot establish that `offline_access` is unsupported. HTTP 403 means
+forbidden access, not necessarily token expiration; it is reported as an API
+error instead of requesting another login. HTTP 401 still refreshes once and
+requests reauthentication if credentials remain invalid.
+
 ## Energy Dashboard
 
 After the first successful update:
@@ -50,11 +81,16 @@ After the first successful update:
 2. Under **Electricity grid**, select the OBI **Grid consumption** sensor for consumption.
 3. For photovoltaic export, select the OBI **Grid export** sensor under return to grid.
 
-The API counters are interpreted as cumulative Wh meter readings and converted to kWh. The original Wh value and measurement timestamp are retained as entity attributes.
+The integration interprets API values as cumulative Wh meter readings and
+converts them to kWh. **The supplied spec does not define the energy unit or
+whether values are cumulative.** This existing interpretation must be checked
+against the meter/OBI app before relying on Energy Dashboard totals. The raw
+value (currently labelled `raw_value_wh`) and measurement timestamp are retained
+as entity attributes; that label is not independent evidence of the unit.
 
 ## API contract
 
-The implementation follows the included `docs/openapi-public.json` contract:
+The implementation is checked against the included [API contract](docs/openapi-public.json):
 
 - `GET /users/me`
 - `GET /historical-data/{bridgeId}/measures`
@@ -62,6 +98,11 @@ The implementation follows the included `docs/openapi-public.json` contract:
 - Vendor-specific v2 `Accept` media types
 
 Import (`energy`) and export (`negative_energy`) are requested separately because the published response schema does not include a measure name in each record.
+
+See the [contract audit](docs/testing/openapi-audit-2026-09-18.md) for the complete
+mapping, spec ambiguities, and the boundary between automated checks and live
+Home Assistant validation. Contract tests load the actual checked-in spec rather
+than comparing implementation constants only with copies of themselves.
 
 ## Security
 
@@ -79,7 +120,12 @@ Import (`energy`) and export (`negative_energy`) are requested separately becaus
 
 ## Development
 
-The repository includes HACS and Hassfest validation workflows. Before publishing a release, verify login, refresh-token rotation, both energy counters, and long-term statistics on a real Home Assistant instance.
+The repository includes unit-test, HACS, and Hassfest validation workflows.
+Run the HA-independent tests locally with `python -m pip install -r requirements-test.txt`
+and `python -m pytest -q`. These use HTTP test doubles and do not prove compatibility
+with OBI's live service or exercise Home Assistant's config-flow runtime.
+Before publishing a release, verify login, refresh-token rotation, both energy
+counters, and long-term statistics on a real Home Assistant instance.
 
 ## License
 

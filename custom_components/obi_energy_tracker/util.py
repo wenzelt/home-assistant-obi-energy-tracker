@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Iterable
-from datetime import datetime
 import hashlib
+import secrets
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
-import secrets
 from typing import Any
 
 
@@ -33,6 +34,52 @@ def first_form_action(html: str) -> str | None:
     parser = _FirstFormParser()
     parser.feed(html)
     return parser.action
+
+
+@dataclass
+class LoginForm:
+    """A login form containing the expected field and its hidden values."""
+
+    action: str
+    hidden: dict[str, str] = field(default_factory=dict)
+
+
+class _LoginFormParser(HTMLParser):
+    def __init__(self, required_field: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.required_field = required_field
+        self.result: LoginForm | None = None
+        self.current: LoginForm | None = None
+        self.has_field = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if tag == "form":
+            self.current = LoginForm(attributes.get("action") or "")
+            self.has_field = False
+        elif tag == "input" and self.current is not None:
+            name = attributes.get("name")
+            if "disabled" in attributes:
+                return
+            input_type = (attributes.get("type") or "text").lower()
+            if name == self.required_field and input_type != "hidden":
+                self.has_field = True
+            if name and input_type == "hidden":
+                self.current.hidden[name] = attributes.get("value") or ""
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form":
+            if self.result is None and self.current is not None and self.has_field:
+                self.result = self.current
+            self.current = None
+
+
+def login_form(html: str, required_field: str) -> LoginForm | None:
+    """Select a form by its input, not its position in the page."""
+    parser = _LoginFormParser(required_field)
+    parser.feed(html)
+    parser.close()
+    return parser.result
 
 
 def generate_code_verifier(length: int = 96) -> str:

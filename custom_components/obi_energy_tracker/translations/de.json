@@ -7,7 +7,7 @@
     },
     "error": {
       "api_error": "Die OBI-Energy-API hat eine unerwartete Antwort geliefert.",
-      "auth_start_failed": "OBI konnte die passwortlose Anmeldung für diese E-Mail-Adresse nicht starten.",
+      "auth_start_failed": "OBI konnte die passwortlose Anmeldung nicht starten. Der fehlgeschlagene Schritt steht im Home-Assistant-Protokoll; die E-Mail-Adresse ist nicht unbedingt falsch.",
       "cannot_connect": "Verbindung zu OBI nicht möglich.",
       "invalid_auth": "OBI hat die Authentifizierungsanfrage abgelehnt.",
       "invalid_otp": "Der Einmalcode ist ungültig oder abgelaufen."

@@ -1,0 +1,464 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "OBI ENERGY TRACKER Public API",
+    "description": "Access tokens are issued by the Keycloak realm `https://auth.obi.com/auth/realms/energy-tracker-clients`\nusing the public client `home-assistant-user` (authorization code flow, PKCE S256 required, no client secret).\nSend the token as `Authorization: Bearer <access_token>`.\n\n## Obtaining an access token\n\nLogin is passwordless: you enter your email address and Keycloak sends a six character\none-time code to that address. The code is valid for five minutes.\n\nThe following script performs the full flow and prints the access token to stdout.\nSave it as `jwt.sh`, then run `TOKEN=$(./jwt.sh)`.\n\n```bash\n#!/usr/bin/env bash\nB=https://auth.obi.com/auth/realms/energy-tracker-clients/protocol/openid-connect\nC=home-assistant-user\nU=http://localhost/callback\nJ=$(mktemp) P1=$(mktemp) P2=$(mktemp) P3=$(mktemp) H3=$(mktemp)\nV=$(head -c32 /dev/urandom|base64|tr +/ -_|tr -d '=')\nA(){ grep -o 'action=\"[^\"]*\"' \"$1\"|head -1|cut -d'\"' -f2|sed 's/&amp;/\\&/g';}\nFB(){ grep -o 'kc-feedback-text[^>]*>[^<]*' \"$1\"|sed 's/.*>//'|head -1;}\nprintf 'Mail: ';read M\nS=$(curl -sc $J -b $J -o $P1 -w %{http_code} \"$B/auth?client_id=$C&response_type=code&scope=openid&redirect_uri=$U&code_challenge=$(printf %s \"$V\"|openssl dgst -sha256 -binary|base64|tr +/ -_|tr -d '=')&code_challenge_method=S256\")\necho \"[1] authorize     : $S\" >&2\nS=$(curl -sc $J -b $J -o $P2 -w %{http_code} -d \"username=$M\" \"$(A $P1)\")\necho \"[2] username POST : $S | fields: $(grep -o 'name=\"[^\"]*\"' $P2|cut -d'\"' -f2|tr '\\n' ' ')| msg: $(FB $P2)\" >&2\nprintf 'OTP: ';read O\nS=$(curl -sc $J -b $J -o $P3 -D $H3 -w %{http_code} -d \"code=$O\" \"$(A $P2)\")\nL=$(grep -i '^location:' $H3|tr -d '\\r'|cut -d' ' -f2)\necho \"[3] otp POST      : $S | location: ${L:-<keine>} | msg: $(FB $P3)\" >&2\nwhile [ -n \"$L\" ] && [ \"${L#$U}\" = \"$L\" ];do\n  L=$(curl -sc $J -b $J -o /dev/null -D- \"$L\"|grep -i '^location:'|tr -d '\\r'|cut -d' ' -f2)\n  echo \"[>] redirect      : ${L:-<keine>}\" >&2\ndone\n[ -z \"$L\" ] && { echo \"ABBRUCH: kein Redirect zur Callback-URL erreicht\" >&2; exit 1; }\nK=$(echo \"$L\"|sed 's/.*[?&]code=//;s/&.*//')\necho \"[4] auth code     : ${K:0:12}... (len ${#K})\" >&2\nR=$(curl -s -d grant_type=authorization_code -d client_id=$C -d redirect_uri=$U -d code_verifier=$V -d \"code=$K\" \"$B/token\")\necho \"$R\"|grep -q access_token && echo \"$R\"|sed 's/.*\"access_token\":\"\\([^\"]*\\)\".*/\\1/' || { echo \"TOKEN-FEHLER:\" >&2; echo \"$R\" >&2; exit 1;}\n```\n\n## Example requests\n\n```bash\nTOKEN=$(./jwt.sh)\n\ncurl -s https://api.obi.com/energytracker/api/users/me \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -H \"Accept: application/vnd.obi.companion.energy-tracking.user.v2+json\"\n\ncurl -s \"https://api.obi.com/energytracker/api/historical-data/<bridgeId>/measures?from=week&to=now&measures=energy\" \\\n  -H \"Authorization: Bearer $TOKEN\" \\\n  -H \"Accept: application/vnd.obi.companion.energy-tracking.historical-record.v2+json\"\n```\n\nThe `bridgeId` and the device ids are returned by `GET /users/me` in the `bridge` object.",
+    "version": "1.0",
+    "contact": {}
+  },
+  "servers": [
+    {
+      "url": "https://api.obi.com/energytracker/api",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Users",
+      "description": "Profile of the account the access token was issued for."
+    },
+    {
+      "name": "Historical Data",
+      "description": "Historical energy readings of the paired devices."
+    }
+  ],
+  "paths": {
+    "/users/me": {
+      "get": {
+        "description": "Retrieve the user currently authenticated by JWT",
+        "operationId": "UsersController_getOwnUser",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "successful",
+            "content": {
+              "application/vnd.obi.companion.energy-tracking.user.v2+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserV2DTO"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "missing or invalid access token"
+          },
+          "403": {
+            "description": "forbidden"
+          },
+          "404": {
+            "description": "not found"
+          }
+        },
+        "summary": "Get User by accountId in JWT",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/historical-data/{bridgeId}/measures": {
+      "get": {
+        "description": "Returns energy, negative_energy, rssi, battery_level, outlet_state for N devices paired to given bridge",
+        "operationId": "HistoricalDataController_getMeasures",
+        "parameters": [
+          {
+            "name": "bridgeId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuidv4",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "month"
+            },
+            "description": "the 'from' parameter could either be a string which can be parsed to a valid js-date or one of the keys 'now', 'hour', 'today', 'week', 'month', 'year', 'start'. Defaults to 'today'"
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "now"
+            },
+            "description": "the 'to' parameter could either be a string which can be parsed to a valid js-date or one of the keys 'now', 'hour', 'today', 'week', 'month', 'year', 'start'. Defaults to 'now'"
+          },
+          {
+            "name": "duration",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "example": "2024-10-01T12:00:00Z/P1Y2M10DT2H30M"
+            },
+            "description": "Accepts valid ISO8601 Duration strings in the forms of start/stop, start/duration, duration/stop and duration only. If only duration is supplied, duration is subtracted from the value of the 'to' query parameter (default 'now'), else duration overwrites 'from' and 'to' parameters."
+          },
+          {
+            "name": "measures",
+            "required": false,
+            "in": "query",
+            "description": "which measures to retrieve.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "energy",
+                  "negative_energy",
+                  "rssi",
+                  "battery"
+                ]
+              }
+            }
+          },
+          {
+            "name": "deviceIds",
+            "required": false,
+            "in": "query",
+            "description": "which deviceIds (sensors/outlets) to query data for. Defaults to all bridge paired devices if not given",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful",
+            "content": {
+              "application/vnd.obi.companion.energy-tracking.historical-record.v2+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MultiDeviceTimestreamRecordsDTO"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "missing or invalid access token"
+          },
+          "403": {
+            "description": "forbidden"
+          },
+          "404": {
+            "description": "not found"
+          }
+        },
+        "summary": "Get ENERGY TRACKER measures",
+        "tags": [
+          "Historical Data"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BridgeV2DTO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuidv4",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "type": {
+            "type": "string",
+            "example": "TODO"
+          },
+          "label": {
+            "type": "string",
+            "example": "123abc",
+            "deprecated": true,
+            "description": "if label is not overwritten by user, it contains the bridges btChallengeId, it should only be used for display purposes."
+          },
+          "description": {
+            "type": "string",
+            "example": "TODO"
+          },
+          "thingName": {
+            "type": "string",
+            "example": "TODO"
+          },
+          "wifiSSID": {
+            "type": "string",
+            "example": "avm-fritzbox-5207"
+          },
+          "claimedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2024-12-11T14:40:19.442Z"
+          },
+          "sensors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SensorV2DTO"
+            }
+          },
+          "hardwareVersion": {
+            "type": "string",
+            "example": "1.0.0",
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?(?:\\+([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?$"
+          },
+          "firmwareVersion": {
+            "type": "string",
+            "example": "1.0.0",
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?(?:\\+([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?$"
+          },
+          "otaProgress": {
+            "type": "number",
+            "example": 72,
+            "nullable": true
+          },
+          "otaStatus": {
+            "type": "string",
+            "example": "NOT_UPDATING",
+            "enum": [
+              "NOT_UPDATING",
+              "BRIDGE_UPDATE_STARTED",
+              "FIRMWARE_DOWNLOAD_STARTED",
+              "BRIDGE_UPDATE_INSTALLING",
+              "BRIDGE_UPDATE_COMPLETE",
+              "BRIDGE_UPDATE_FAILED"
+            ]
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true,
+            "example": "123abc",
+            "description": "User set-able name of the bridge for display purposes. Replaces label field"
+          },
+          "btChallengeId": {
+            "type": "string",
+            "nullable": true,
+            "example": "48B25F",
+            "description": "Immutable bluetooth challenge ID of bridge. Used for identification of bridge in bluetooth connected scenarios"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "claimedAt",
+          "hardwareVersion",
+          "firmwareVersion",
+          "otaProgress",
+          "otaStatus",
+          "displayName",
+          "btChallengeId"
+        ]
+      },
+      "MultiDeviceTimestreamRecordsDTO": {
+        "type": "object",
+        "properties": {
+          "devices": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TimestreamRecordDTO"
+              }
+            },
+            "example": {
+              "771e8400-e29b-41d4-a716-446655448735": [
+                {
+                  "time": "2024-08-19 00:00:00.000000000",
+                  "value": 500
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "devices"
+        ]
+      },
+      "SensorV2DTO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuidv4",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "bridgeId": {
+            "type": "string",
+            "format": "uuidv4",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "type": {
+            "type": "string",
+            "example": "electricity"
+          },
+          "model": {
+            "type": "string",
+            "example": "TODO"
+          },
+          "label": {
+            "type": "string",
+            "example": "TODO"
+          },
+          "description": {
+            "type": "string",
+            "example": "TODO"
+          },
+          "hardwareVersion": {
+            "type": "string",
+            "example": "1.0.0",
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?(?:\\+([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?$"
+          },
+          "firmwareVersion": {
+            "type": "string",
+            "example": "1.0.0",
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?(?:\\+([\\da-zA-Z-]+(?:\\.[\\da-zA-Z-]+)*))?$"
+          },
+          "otaStatus": {
+            "type": "string",
+            "example": "NOT_UPDATING",
+            "enum": [
+              "NOT_UPDATING",
+              "SENSOR_UPDATE_STARTED",
+              "SENSOR_UPDATE_COMPLETE",
+              "SENSOR_UPDATE_FAILED"
+            ]
+          },
+          "otaProgress": {
+            "type": "number",
+            "example": 72,
+            "nullable": true
+          },
+          "batteryLevel": {
+            "type": "number",
+            "example": 94,
+            "nullable": true
+          },
+          "uploadInterval": {
+            "type": "number",
+            "example": 300,
+            "nullable": true,
+            "description": "Rate at which sensor sends data. Change to toggle sensor \"live-mode\". Acceptable values are 300 (default) and 2 (live)"
+          },
+          "isOnline": {
+            "type": "boolean",
+            "example": true
+          },
+          "claimedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2024-12-11T14:40:19.442Z",
+            "description": "Date of when sensor was associated whith current bridge/user"
+          },
+          "dataVisibleSince": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2024-12-11T14:40:19.442Z",
+            "description": "Date of when sensor was associated whith current bridge/user"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Wallbox1",
+            "nullable": true,
+            "description": "User set-able name of the sensor for display purposes. Replaces label field"
+          }
+        },
+        "required": [
+          "id",
+          "hardwareVersion",
+          "firmwareVersion",
+          "otaStatus",
+          "isOnline",
+          "claimedAt",
+          "dataVisibleSince",
+          "displayName"
+        ]
+      },
+      "TimestreamRecordDTO": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "example": "2024-08-19 00:00:00.000000000"
+          },
+          "value": {
+            "type": "number",
+            "example": 500
+          }
+        },
+        "required": [
+          "time",
+          "value"
+        ]
+      },
+      "UserV2DTO": {
+        "type": "object",
+        "properties": {
+          "ecomId": {
+            "type": "string",
+            "pattern": "^\\d{17}$",
+            "example": "30902006126975260"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "max.mustermann@example.com"
+          },
+          "givenName": {
+            "type": "string",
+            "example": "Max Mustermann"
+          },
+          "tenant": {
+            "type": "string",
+            "example": "de"
+          },
+          "accountType": {
+            "type": "string",
+            "example": "HEYOBI_CUSTOMER"
+          },
+          "bridge": {
+            "$ref": "#/components/schemas/BridgeV2DTO"
+          },
+          "hasSeenAdvertisingConsentBanner": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the user has seen the advertising consent banner."
+          },
+          "advertisingConsentBannerViewDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2026-04-27T10:15:30.000Z",
+            "description": "Server-set timestamp marking when the user first acknowledged the advertising consent banner. Read-only."
+          }
+        },
+        "required": [
+          "ecomId",
+          "email",
+          "givenName",
+          "tenant",
+          "accountType",
+          "hasSeenAdvertisingConsentBanner"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access token issued by the Keycloak realm `https://auth.obi.com/auth/realms/energy-tracker-clients`. Obtain it with the public client id `home-assistant-user` via the authorization code flow (`https://auth.obi.com/auth/realms/energy-tracker-clients/protocol/openid-connect/auth` and `/protocol/openid-connect/token`, PKCE S256 required, no client secret). Send it as `Authorization: Bearer <access_token>`."
+      }
+    }
+  }
+}

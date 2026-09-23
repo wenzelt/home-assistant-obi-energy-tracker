@@ -1,5 +1,10 @@
 # TDD evidence: OBI Energy Tracker vs the published OpenAPI contract
 
+> Historical report. The [2026-09-18 audit](openapi-audit-2026-09-18.md)
+> supersedes the blanket "no drift" conclusion and the HTTP 403 behavior below.
+> That audit adds the previously missing specification to the repository and
+> distinguishes documented behavior from assumptions about units and sessions.
+
 ## Source
 
 No `*.plan.md` was provided. This run was initiated directly with the
