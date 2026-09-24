@@ -7,14 +7,12 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import OBIEnergyCoordinator
-from .entity import OBIEnergyEntity
+from .coordinator import OBIEnergyConfigEntry, OBIEnergyCoordinator
+from .entity import OBIEnergyEntity, async_setup_sensor_entities
 
 PARALLEL_UPDATES = 0
 
@@ -28,14 +26,14 @@ ONLINE_DESCRIPTION = BinarySensorEntityDescription(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: OBIEnergyConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up OBI connectivity sensors."""
-    coordinator: OBIEnergyCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        OBIOnlineBinarySensor(coordinator, sensor_id)
-        for sensor_id in coordinator.data.readings
+    async_setup_sensor_entities(
+        entry,
+        async_add_entities,
+        lambda coordinator, sensor_id: [OBIOnlineBinarySensor(coordinator, sensor_id)],
     )
 
 

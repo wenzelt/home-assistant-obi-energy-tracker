@@ -110,3 +110,37 @@ def test_parse_obi_timestamp_returns_none_for_empty_or_missing_value() -> None:
 def test_parse_obi_timestamp_returns_none_for_garbage() -> None:
     assert obi_util.parse_obi_timestamp("not-a-timestamp") is None
     assert obi_util.parse_obi_timestamp("2024-13-99 99:99:99.000000000") is None
+
+
+def test_latest_record_orders_by_time_not_string() -> None:
+    records = [
+        {"time": "2024-08-19T02:00:00+02:00", "value": 2},  # 00:00 UTC
+        {"time": "2024-08-19T01:00:00Z", "value": 3},
+    ]
+    assert obi_util.latest_record(records)["value"] == 3
+
+
+def test_average_power_from_two_newest_records() -> None:
+    records = [
+        {"time": "2024-08-19 00:00:00.000000000", "value": 1000},
+        {"time": "2024-08-19 00:10:00.000000000", "value": 1100},
+        {"time": "2024-08-19 00:05:00.000000000", "value": 1050},
+    ]
+    # 50 Wh over five minutes = 600 W.
+    assert obi_util.average_power_w(records) == 600.0
+
+
+def test_average_power_is_unknown_without_a_usable_interval() -> None:
+    assert obi_util.average_power_w([]) is None
+    single = [{"time": "2024-08-19T00:00:00Z", "value": 1}]
+    assert obi_util.average_power_w(single) is None
+    same_time = [
+        {"time": "2024-08-19T00:00:00Z", "value": 1},
+        {"time": "2024-08-19T00:00:00Z", "value": 2},
+    ]
+    assert obi_util.average_power_w(same_time) is None
+    counter_reset = [
+        {"time": "2024-08-19T00:00:00Z", "value": 500},
+        {"time": "2024-08-19T00:05:00Z", "value": 10},
+    ]
+    assert obi_util.average_power_w(counter_reset) is None

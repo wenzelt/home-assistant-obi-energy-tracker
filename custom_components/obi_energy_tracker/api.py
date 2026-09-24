@@ -20,7 +20,7 @@ from .const import (
     TOKEN_URL,
     USER_ACCEPT,
 )
-from .util import latest_record
+from .util import valid_records
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class OBIEnergyApi:
                         "refresh_token": refresh_token,
                     },
                 )
-            except ClientError as err:
+            except (ClientError, TimeoutError) as err:
                 raise OBIEnergyConnectionError("Unable to refresh OBI token") from err
 
             if response.status in (HTTPStatus.BAD_REQUEST, HTTPStatus.UNAUTHORIZED):
@@ -108,8 +108,10 @@ class OBIEnergyApi:
                     self._token.get("scope"),
                     self._token.get("refresh_expires_in"),
                 )
+                response.release()
                 raise OBIEnergyAuthError("OBI refresh token was rejected")
             if response.status >= HTTPStatus.BAD_REQUEST:
+                response.release()
                 raise OBIEnergyConnectionError(
                     f"OBI token endpoint returned HTTP {response.status}"
                 )
@@ -164,7 +166,7 @@ class OBIEnergyApi:
                         "Accept": accept,
                     },
                 )
-            except ClientError as err:
+            except (ClientError, TimeoutError) as err:
                 raise OBIEnergyConnectionError(
                     "Unable to contact OBI Energy API"
                 ) from err
@@ -183,6 +185,15 @@ class OBIEnergyApi:
                 # The contract distinguishes forbidden access from an invalid
                 # token. Reauthenticating is not a general remedy for HTTP 403.
                 raise OBIEnergyResponseError("OBI Energy API access is forbidden (403)")
+            if response.status >= 500 or response.status in (
+                HTTPStatus.REQUEST_TIMEOUT,
+                HTTPStatus.TOO_MANY_REQUESTS,
+            ):
+                response.release()
+                raise OBIEnergyConnectionError(
+                    "OBI Energy API is temporarily unavailable "
+                    f"(HTTP {response.status})"
+                )
             if response.status >= HTTPStatus.BAD_REQUEST:
                 response.release()
                 raise OBIEnergyResponseError(
@@ -199,14 +210,14 @@ class OBIEnergyApi:
         """Return the authenticated user and paired bridge/sensors."""
         return await self._async_request_json("GET", "/users/me", accept=USER_ACCEPT)
 
-    async def async_get_latest_measure(
+    async def async_get_measure_records(
         self,
         bridge_id: str,
         measure: str,
         *,
         duration: str = DEFAULT_HISTORY_DURATION,
-    ) -> dict[str, dict[str, Any]]:
-        """Return the latest record per device for one measure."""
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return valid records per device for one measure, oldest first."""
         payload = await self._async_request_json(
             "GET",
             f"/historical-data/{bridge_id}/measures",
@@ -217,20 +228,42 @@ class OBIEnergyApi:
         if not isinstance(devices, dict):
             raise OBIEnergyResponseError("Historical response did not contain devices")
 
-        result: dict[str, dict[str, Any]] = {}
+        result: dict[str, list[dict[str, Any]]] = {}
         for device_id, records in devices.items():
             if not isinstance(device_id, str) or not isinstance(records, list):
                 continue
-            record = latest_record(records)
-            if record is not None:
-                result[device_id] = record
+            valid = valid_records(records)
+            if valid:
+                result[device_id] = valid
         return result
+
+    async def async_get_latest_measure(
+        self,
+        bridge_id: str,
+        measure: str,
+        *,
+        duration: str = DEFAULT_HISTORY_DURATION,
+    ) -> dict[str, dict[str, Any]]:
+        """Return the latest record per device for one measure."""
+        records = await self.async_get_measure_records(
+            bridge_id, measure, duration=duration
+        )
+        return {device_id: items[-1] for device_id, items in records.items()}
 
     async def async_get_all_latest_measures(
         self, bridge_id: str
     ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
-        """Fetch import and export counters concurrently."""
+        """Fetch the latest import and export counters concurrently."""
         return await asyncio.gather(
             self.async_get_latest_measure(bridge_id, "energy"),
             self.async_get_latest_measure(bridge_id, "negative_energy"),
+        )
+
+    async def async_get_all_measure_records(
+        self, bridge_id: str
+    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+        """Fetch recent import and export counter records concurrently."""
+        return await asyncio.gather(
+            self.async_get_measure_records(bridge_id, "energy"),
+            self.async_get_measure_records(bridge_id, "negative_energy"),
         )

@@ -11,6 +11,8 @@ Unofficial Home Assistant custom integration for the **OBI ENERGY TRACKER Public
 - Automatic bridge and sensor discovery through `GET /users/me`
 - Grid-consumption and grid-export counters in kWh
 - `device_class: energy` and `state_class: total_increasing`
+- Derived grid-consumption and grid-export power in W
+- Newly paired OBI sensors are added automatically, without a reload
 - Sensor battery and connectivity diagnostics
 - Five-minute cloud polling, matching OBI's meter upload interval
 - HACS-compatible repository layout
@@ -30,6 +32,8 @@ There is **no client secret to obtain**. OBI publishes a fixed public OAuth clie
 During setup, the integration asks for your heyOBI email address and then the OTP sent by OBI. Home Assistant stores the resulting access/refresh token in the config entry. It does not use `secrets.yaml`. Treat Home Assistant's `.storage` directory and backups as sensitive because config-entry data is not designed as an encrypted secret vault.
 
 ## Installation with HACS
+
+Requires Home Assistant 2025.2 or newer.
 
 1. In HACS, open the three-dot menu and select **Custom repositories**.
 2. Add `https://github.com/wenzelt/home-assistant-obi-energy-tracker` as category **Integration**.
@@ -88,6 +92,16 @@ against the meter/OBI app before relying on Energy Dashboard totals. The raw
 value (currently labelled `raw_value_wh`) and measurement timestamp are retained
 as entity attributes; that label is not independent evidence of the unit.
 
+### Power sensors
+
+OBI publishes cumulative counters only, not instantaneous power. The
+**Grid consumption power** and **Grid export power** sensors are derived from the
+two most recent counter readings: `Δ Wh × 3600 / Δ seconds`. With OBI's
+five-minute upload interval they show the average power over the last five
+minutes, not a live value. They are unavailable until two readings exist in the
+30-minute history window, and when the counter decreases (reset or meter swap).
+Like the energy sensors, they rely on the Wh interpretation above.
+
 ## API contract
 
 The implementation is checked against the included [API contract](docs/openapi-public.json):
@@ -115,15 +129,24 @@ than comparing implementation constants only with copies of themselves.
 
 - This is a cloud integration; it requires OBI's API and internet access.
 - OBI can change the service or OAuth flow.
-- Newly paired sensors require an integration reload before new entities are created.
+- Sensors removed from the OBI account stay in Home Assistant as unavailable until
+  you delete the device.
 - The integration has been validated statically against the published OpenAPI document, but a real OBI account/device is required for end-to-end testing.
 
 ## Development
 
-The repository includes unit-test, HACS, and Hassfest validation workflows.
-Run the HA-independent tests locally with `python -m pip install -r requirements-test.txt`
-and `python -m pytest -q`. These use HTTP test doubles and do not prove compatibility
-with OBI's live service or exercise Home Assistant's config-flow runtime.
+The repository includes unit-test, Home Assistant runtime-test, HACS, and Hassfest
+validation workflows.
+
+- HA-independent tests: `python -m pip install -r requirements-test.txt` and
+  `python -m pytest -q`.
+- Home Assistant runtime tests (Python 3.13): `python -m pip install -r
+  tests_ha/requirements.txt` and `python -m pytest tests_ha -q`. These load the
+  integration into a test Home Assistant instance and exercise setup, entities,
+  sensor discovery, reauthentication, the login/reauth config flows, and
+  diagnostics with the OBI API mocked.
+
+Neither suite proves compatibility with OBI's live service.
 Before publishing a release, verify login, refresh-token rotation, both energy
 counters, and long-term statistics on a real Home Assistant instance.
 
