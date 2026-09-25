@@ -60,12 +60,49 @@ def _validated_auth_url(base_url: str, location: str) -> str:
     return str(target)
 
 
-def _check_status(response: Any, stage: str) -> None:
-    """Report transient failures separately, without logging response bodies/URLs."""
+def _authorization_failure_reason(body: str) -> str | None:
+    """Classify known OAuth failures using fixed messages, never server text."""
+    body = body.casefold()
+    if any(
+        phrase in body
+        for phrase in (
+            "invalid parameter: redirect_uri",
+            "invalid_redirect_uri",
+            "invalid redirect uri",
+            "redirect_uri is not valid",
+        )
+    ):
+        return "OBI rejected the configured redirect URI"
+    if "invalid_client" in body or "client not found" in body:
+        return "OBI rejected the configured OAuth client"
+    if "invalid_scope" in body or "invalid parameter: scope" in body:
+        return "OBI rejected the configured OAuth scope"
+    if any(
+        phrase in body
+        for phrase in (
+            "invalid parameter: code_challenge",
+            "invalid code_challenge",
+            "invalid pkce",
+        )
+    ):
+        return "OBI rejected the PKCE parameters"
+    return None
+
+
+async def _check_status(response: Any, stage: str) -> None:
+    """Report safe failure classes without logging response bodies or URLs."""
     status = response.status
     if status >= HTTPStatus.BAD_REQUEST:
+        reason = None
+        if stage == "Authorization page" and status == HTTPStatus.BAD_REQUEST:
+            # Error pages can contain account data, tokens or request URLs.
+            # Read a small prefix and log only a fixed, locally defined label.
+            body = (await response.content.read(8192)).decode("utf-8", errors="ignore")
+            reason = _authorization_failure_reason(body)
         response.release()
         message = f"{stage} returned HTTP {status}"
+        if reason:
+            message += f" ({reason})"
         if (
             status in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.TOO_MANY_REQUESTS)
             or status >= 500
@@ -112,7 +149,7 @@ class OBIPasswordlessAuth:
                 allow_redirects=True,
             )
             self._collect_cookies([*response.history, response])
-            _check_status(response, "Authorization page")
+            await _check_status(response, "Authorization page")
             html = await response.text()
             username_form = login_form(html, "username")
             if username_form is None:
@@ -126,7 +163,7 @@ class OBIPasswordlessAuth:
                 allow_redirects=True,
             )
             self._collect_cookies([*response.history, response])
-            _check_status(response, "Email submission")
+            await _check_status(response, "Email submission")
             html = await response.text()
             otp_form = login_form(html, "code")
             if otp_form is None:
@@ -161,7 +198,7 @@ class OBIPasswordlessAuth:
                 middlewares=(),
             )
             self._collect_cookies([response])
-            _check_status(response, "OTP submission")
+            await _check_status(response, "OTP submission")
 
             location = response.headers.get("Location")
             if location:
@@ -196,7 +233,7 @@ class OBIPasswordlessAuth:
                     middlewares=(),
                 )
                 self._collect_cookies([response])
-                _check_status(response, "Login redirect")
+                await _check_status(response, "Login redirect")
                 current_url = str(response.url)
                 location = response.headers.get("Location", "")
                 response.release()
@@ -217,7 +254,7 @@ class OBIPasswordlessAuth:
                     "code": code,
                 },
             )
-            _check_status(response, "Token exchange")
+            await _check_status(response, "Token exchange")
             token = await _async_json_response(response, context="OBI token endpoint")
         except (ClientError, TimeoutError) as err:
             raise OBIConnectionError("Unable to complete OBI authentication") from err

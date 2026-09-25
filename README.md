@@ -52,6 +52,11 @@ If requesting a new email code fails, look in **Settings → System → Logs** f
 `OBI login start failed`. The warning identifies the failed stage (authorization
 page, email submission, or missing expected form) and HTTP status when available.
 It deliberately excludes email addresses, HTML bodies, cookies, and login URLs.
+For authorization-page HTTP 400, it can also identify a rejected redirect URI,
+OAuth client, scope, or PKCE parameter if the response contains a recognizable
+error. A bare HTTP 400 does not identify which part of OBI's request was rejected;
+please include the new warning when reporting the issue. Repeated submissions
+will not fix a rejected authorization request.
 HTTP 408, 429, and 5xx responses are temporary connection/service failures, not
 evidence of an incorrect email address. For 429, wait before requesting another
 code; do not repeatedly press Submit. A missing OTP form can indicate that OBI
