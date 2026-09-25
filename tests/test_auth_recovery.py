@@ -84,6 +84,51 @@ async def test_start_failure_logged_without_secrets(caplog):
     assert "private" not in caplog.text
 
 
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ("Invalid parameter: redirect_uri", "redirect URI"),
+        ('{"error":"invalid_client"}', "OAuth client"),
+        ('{"error":"invalid_scope"}', "OAuth scope"),
+        ("Invalid parameter: code_challenge", "PKCE parameters"),
+    ],
+)
+async def test_authorization_400_reports_only_safe_error_class(body, expected, caplog):
+    session = FakeSession()
+    session.queue_response(
+        "GET",
+        const.AUTHORIZE_URL,
+        FakeResponse(
+            status=400,
+            url=const.AUTHORIZE_URL + "?code_challenge=private-challenge",
+            text_body=f"{body} private-email@example.test secret-token",
+        ),
+    )
+    with pytest.raises(auth.OBIAuthError, match=expected):
+        await auth.OBIPasswordlessAuth(session).async_start(
+            "private-email@example.test"
+        )
+    assert "HTTP 400" in caplog.text
+    assert expected in caplog.text
+    assert "private" not in caplog.text
+    assert "secret-token" not in caplog.text
+    assert body not in caplog.text
+
+
+async def test_unknown_authorization_400_does_not_log_server_text(caplog):
+    session = FakeSession()
+    session.queue_response(
+        "GET",
+        const.AUTHORIZE_URL,
+        FakeResponse(status=400, text_body="Unknown error: private-email@example.test"),
+    )
+    with pytest.raises(auth.OBIAuthError, match="Authorization page returned HTTP 400"):
+        await auth.OBIPasswordlessAuth(session).async_start(
+            "private-email@example.test"
+        )
+    assert "private-email@example.test" not in caplog.text
+
+
 async def test_email_form_redisplayed_is_not_an_otp_form(caplog):
     session = FakeSession()
     session.queue_response(

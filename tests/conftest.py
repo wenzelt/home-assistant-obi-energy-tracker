@@ -24,15 +24,13 @@ from __future__ import annotations
 
 import importlib
 import json
-from pathlib import Path
 import sys
 import types
+from pathlib import Path
 from typing import Any
 
 PACKAGE_NAME = "obi_energy_tracker"
-PACKAGE_DIR = (
-    Path(__file__).parents[1] / "custom_components" / "obi_energy_tracker"
-)
+PACKAGE_DIR = Path(__file__).parents[1] / "custom_components" / "obi_energy_tracker"
 
 
 def _install_namespace_package() -> None:
@@ -66,11 +64,13 @@ class FakeResponse:
         headers: dict[str, str] | None = None,
         cookies: dict[str, str] | None = None,
         url: str = "",
-        history: list["FakeResponse"] | None = None,
+        history: list[FakeResponse] | None = None,
     ) -> None:
         self.status = status
         self.headers = headers or {}
-        self.cookies = {name: FakeCookie(value) for name, value in (cookies or {}).items()}
+        self.cookies = {
+            name: FakeCookie(value) for name, value in (cookies or {}).items()
+        }
         self.url = url
         self.history = history or []
         self._json_payload = json_payload
@@ -80,6 +80,10 @@ class FakeResponse:
             self._text_body = json.dumps(json_payload)
         else:
             self._text_body = ""
+        self.content = self
+
+    async def read(self, size: int = -1) -> bytes:
+        return self._text_body.encode("utf-8")[:size]
 
     async def json(self, content_type: str | None = None) -> Any:
         if self._json_payload is None:
