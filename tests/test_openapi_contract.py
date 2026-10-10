@@ -159,7 +159,10 @@ async def test_authorization_flow_matches_embedded_login_example():
         const.SPEC_REDIRECT_URI
     )
     redirect = const.REDIRECT_URI
-    scope = re.search(r"scope=([^&]+)&", description)[1]
+    # The spec only shows "openid"; offline_access is requested on top so
+    # sessions outlive OBI's SSO session (see const.py).
+    assert re.search(r"scope=([^&]+)&", description)[1] == const.OAUTH_FALLBACK_SCOPE
+    scope = const.OAUTH_SCOPE
     assert oauth_base + "/auth" == const.AUTHORIZE_URL
     assert oauth_base + "/token" == const.TOKEN_URL
     email_url = "https://auth.obi.com/email-form"

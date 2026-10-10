@@ -46,6 +46,11 @@ repository settings, not code, so don't try to fix that failure in a commit.
   The integration never follows the redirect; it only reads `code` from the
   `Location` header. `test_openapi_contract.py` asserts both the spec value and
   the value in use, so a spec update shows up as a failing test.
+- **Offline access.** `OAUTH_SCOPE` must include `offline_access`. Without it the
+  refresh token dies with OBI's SSO session after a few hours and users have to
+  enter a new email code. It was removed once (commit `eac7f1a`) on the mistaken theory that
+  it broke logins; the real cause was the redirect URI. If OBI rejects the scope,
+  `auth.py` retries with `openid`.
 - **Shared cookie jar.** Home Assistant's shared aiohttp session keeps cookies
   until restart. `auth.py` clears `auth.obi.com` cookies when a login starts and
   after it succeeds. Without that, a stale Keycloak session breaks every retry.
