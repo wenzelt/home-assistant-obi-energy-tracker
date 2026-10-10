@@ -115,3 +115,24 @@ async def test_reauth_with_other_account_is_rejected(hass: HomeAssistant) -> Non
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "wrong_account"
     assert entry.data[CONF_TOKEN] == {"access_token": "old"}
+
+
+async def test_login_start_failure_shows_failing_step(hass: HomeAssistant) -> None:
+    from custom_components.obi_energy_tracker.auth import OBIAuthError
+
+    auth, _, _ = _patch_login()
+    with auth as auth_cls:
+        auth_cls.return_value.async_start.side_effect = OBIAuthError(
+            "Authorization page returned HTTP 400"
+        )
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_EMAIL: "user@example.com"}
+        )
+
+    assert result["errors"] == {"base": "auth_start_failed"}
+    assert result["description_placeholders"]["details"] == (
+        "Authorization page returned HTTP 400"
+    )

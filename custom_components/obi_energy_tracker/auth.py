@@ -184,7 +184,10 @@ class OBIPasswordlessAuth:
             self._otp_action = _validated_auth_url(str(response.url), otp_form.action)
             self._otp_hidden = otp_form.hidden
         except (ClientError, TimeoutError) as err:
-            error = OBIConnectionError("Unable to contact OBI authentication service")
+            error = OBIConnectionError(
+                "Unable to contact OBI authentication service "
+                f"({type(err).__name__})"
+            )
             _LOGGER.warning("OBI login start failed: %s", error)
             raise error from err
         except OBIAuthError as err:
