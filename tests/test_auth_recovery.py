@@ -95,15 +95,17 @@ async def test_start_failure_logged_without_secrets(caplog):
 )
 async def test_authorization_400_reports_only_safe_error_class(body, expected, caplog):
     session = FakeSession()
-    session.queue_response(
-        "GET",
-        const.AUTHORIZE_URL,
-        FakeResponse(
-            status=400,
-            url=const.AUTHORIZE_URL + "?code_challenge=private-challenge",
-            text_body=f"{body} private-email@example.test secret-token",
-        ),
-    )
+    # A rejected scope is retried once without offline access.
+    for _ in range(2 if "scope" in body else 1):
+        session.queue_response(
+            "GET",
+            const.AUTHORIZE_URL,
+            FakeResponse(
+                status=400,
+                url=const.AUTHORIZE_URL + "?code_challenge=private-challenge",
+                text_body=f"{body} private-email@example.test secret-token",
+            ),
+        )
     with pytest.raises(auth.OBIAuthError, match=expected):
         await auth.OBIPasswordlessAuth(session).async_start(
             "private-email@example.test"
@@ -240,13 +242,62 @@ async def test_restart_clears_stale_pending_otp_and_cookies():
     assert flow._otp_hidden == {}
 
 
-async def test_documented_scope_is_used_and_no_silent_retry():
+async def test_offline_scope_is_requested_and_other_errors_are_not_retried():
     session = FakeSession()
     session.queue_response("GET", const.AUTHORIZE_URL, FakeResponse(status=400))
     with pytest.raises(auth.OBIAuthError):
         await auth.OBIPasswordlessAuth(session).async_start("user@example.test")
     assert len(session.calls) == 1
-    assert session.calls[0].kwargs["params"]["scope"] == "openid"
+    assert session.calls[0].kwargs["params"]["scope"] == "openid offline_access"
+
+
+@pytest.mark.parametrize(
+    "rejection",
+    [
+        FakeResponse(status=400, text_body='{"error":"invalid_scope"}'),
+        FakeResponse(
+            url=const.REDIRECT_URI + "?error=invalid_scope&error_description=x"
+        ),
+    ],
+    ids=["error-page", "callback-redirect"],
+)
+async def test_rejected_offline_scope_falls_back_to_openid(rejection, caplog):
+    session = FakeSession()
+    session.queue_response("GET", const.AUTHORIZE_URL, rejection)
+    session.queue_response(
+        "GET",
+        const.AUTHORIZE_URL,
+        FakeResponse(
+            url=const.AUTHORIZE_URL,
+            text_body='<form action="https://auth.obi.com/e"><input name="username"></form>',
+        ),
+    )
+    session.queue_response(
+        "POST",
+        "https://auth.obi.com/e",
+        FakeResponse(
+            url="https://auth.obi.com/e",
+            text_body='<form action="https://auth.obi.com/o"><input name="code"></form>',
+        ),
+    )
+
+    await auth.OBIPasswordlessAuth(session).async_start("user@example.test")
+
+    scopes = [call.kwargs["params"]["scope"] for call in session.calls[:2]]
+    assert scopes == ["openid offline_access", "openid"]
+    assert "rejected offline access" in caplog.text
+
+
+async def test_other_oauth_error_on_callback_is_not_retried():
+    session = FakeSession()
+    session.queue_response(
+        "GET",
+        const.AUTHORIZE_URL,
+        FakeResponse(url=const.REDIRECT_URI + "?error=access_denied"),
+    )
+    with pytest.raises(auth.OBIAuthError, match="redirected with an OAuth error"):
+        await auth.OBIPasswordlessAuth(session).async_start("user@example.test")
+    assert len(session.calls) == 1
 
 
 async def test_unrelated_page_after_otp_is_not_reported_as_invalid_code():

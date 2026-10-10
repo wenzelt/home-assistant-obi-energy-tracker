@@ -15,6 +15,7 @@ from yarl import URL
 from .const import (
     AUTHORIZE_URL,
     CLIENT_ID,
+    OAUTH_FALLBACK_SCOPE,
     OAUTH_SCOPE,
     REDIRECT_URI,
     TOKEN_URL,
@@ -35,6 +36,13 @@ class OBIConnectionError(OBIAuthError):
 
 class OBIInvalidOTP(OBIAuthError):
     """Raised when the one-time password is rejected."""
+
+
+class OBIScopeRejected(OBIAuthError):
+    """Raised when OBI rejects the requested OAuth scope."""
+
+
+_SCOPE_REJECTED = "OBI rejected the configured OAuth scope"
 
 
 async def _async_json_response(response: Any, *, context: str) -> Mapping[str, Any]:
@@ -76,7 +84,7 @@ def _authorization_failure_reason(body: str) -> str | None:
     if "invalid_client" in body or "client not found" in body:
         return "OBI rejected the configured OAuth client"
     if "invalid_scope" in body or "invalid parameter: scope" in body:
-        return "OBI rejected the configured OAuth scope"
+        return _SCOPE_REJECTED
     if any(
         phrase in body
         for phrase in (
@@ -111,6 +119,8 @@ async def _check_status(response: Any, stage: str) -> None:
             or status >= 500
         ):
             raise OBIConnectionError(message)
+        if reason == _SCOPE_REJECTED:
+            raise OBIScopeRejected(message)
         raise OBIAuthError(message)
 
 
@@ -143,6 +153,18 @@ class OBIPasswordlessAuth:
 
     async def async_start(self, email: str) -> None:
         """Start the login flow and request an OTP for the email address."""
+        try:
+            await self._async_start(email, OAUTH_SCOPE)
+        except OBIScopeRejected:
+            # Still log in, but tokens will only last as long as OBI's normal
+            # session, so Home Assistant will ask for a new code more often.
+            _LOGGER.warning(
+                "OBI rejected offline access; retrying login without it. "
+                "OBI will require a new email code whenever its session ends"
+            )
+            await self._async_start(email, OAUTH_FALLBACK_SCOPE)
+
+    async def _async_start(self, email: str, scope: str) -> None:
         self._clear_session_cookies()
         self._cookies.clear()
         self._otp_action = None
@@ -151,7 +173,7 @@ class OBIPasswordlessAuth:
         params = {
             "client_id": CLIENT_ID,
             "response_type": "code",
-            "scope": OAUTH_SCOPE,
+            "scope": scope,
             "redirect_uri": REDIRECT_URI,
             "code_challenge": compute_code_challenge(self._verifier),
             "code_challenge_method": "S256",
@@ -166,6 +188,15 @@ class OBIPasswordlessAuth:
             )
             self._collect_cookies([*response.history, response])
             await _check_status(response, "Authorization page")
+            # Keycloak reports OAuth errors by redirecting to the callback.
+            final_url = URL(str(response.url))
+            if final_url.with_query(None).with_fragment(None) == URL(REDIRECT_URI):
+                response.release()
+                if final_url.query.get("error") == "invalid_scope":
+                    raise OBIScopeRejected(
+                        f"Authorization page redirected with an error ({_SCOPE_REJECTED})"
+                    )
+                raise OBIAuthError("Authorization page redirected with an OAuth error")
             html = await response.text()
             username_form = login_form(html, "username")
             if username_form is None:

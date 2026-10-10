@@ -77,18 +77,21 @@ evidence of an incorrect email address. For 429, wait before requesting another
 code; do not repeatedly press Submit. A missing OTP form can indicate that OBI
 returned the email page, changed its login flow, or rejected the request.
 
-New logins request `openid`, matching the example in the supplied
-[API specification](docs/openapi-public.json). Version 0.1.3 requested the
-additional `offline_access` scope, which is not documented by this spec.
-This alignment does not prove that OBI rejects offline access. Existing saved
-tokens are not discarded or rewritten by the scope change, and refresh-token
-rotation remains supported. Ordinary sessions may eventually need a new OTP;
-the spec does not define refresh-token or offline-session lifetimes.
+Logins request `openid offline_access`. With only `openid` (the scope in the
+[API specification](docs/openapi-public.json)), OBI's refresh token expires
+together with its normal login session, after a few hours, and Home Assistant
+asks for a new email code. Offline access gives a refresh token that keeps
+working beyond that. If OBI ever rejects `offline_access`, the login retries
+with `openid` and logs a warning, so setup still works, just with shorter sessions.
+
+Versions 0.2.0 to 0.3.0 (and 0.1.3 installed after 18 September 2026) requested
+only `openid`. If you logged in with one of those, reconnect once (**Settings → Devices & services → OBI Energy Tracker →
+Reconfigure/Reauthenticate**, or wait for the next prompt) to get the longer-lived token.
 
 When reporting a failure, include the integration and Home Assistant versions,
 whether the official OBI app still works, and the warning above. Do not upload
 tokens, OTPs, `.storage`, raw HTTP traces, or full backups. The generic login-start
-error alone cannot establish that `offline_access` is unsupported. HTTP 403 means
+error alone does not show which part of the request OBI rejected. HTTP 403 means
 forbidden access, not necessarily token expiration; it is reported as an API
 error instead of requesting another login. HTTP 401 still refreshes once and
 requests reauthentication if credentials remain invalid.
