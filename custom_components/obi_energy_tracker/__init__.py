@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from homeassistant.core import HomeAssistant
+from datetime import datetime
+
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_track_time_interval
 
 from .api import OBIEnergyApi
-from .const import CONF_TOKEN, PLATFORMS
+from .const import CONF_TOKEN, HISTORY_IMPORT_INTERVAL, PLATFORMS
 from .coordinator import OBIEnergyConfigEntry, OBIEnergyCoordinator
+from .statistics import OBIHistoryImporter
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: OBIEnergyConfigEntry) -> bool:
@@ -29,6 +33,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: OBIEnergyConfigEntry) ->
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    importer = OBIHistoryImporter(hass, coordinator)
+
+    @callback
+    def _async_schedule_import(_now: datetime | None = None) -> None:
+        entry.async_create_background_task(
+            hass, importer.async_import(), "obi_energy_tracker history import"
+        )
+
+    _async_schedule_import()
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass, _async_schedule_import, HISTORY_IMPORT_INTERVAL
+        )
+    )
     return True
 
 

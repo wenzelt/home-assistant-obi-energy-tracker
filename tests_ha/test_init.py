@@ -88,6 +88,7 @@ def mock_api():
         patch(
             f"{API}.async_get_all_measure_records", new_callable=AsyncMock
         ) as get_records,
+        patch(f"{API}.async_get_measure_records", new=AsyncMock(return_value={})),
     ):
         get_user.return_value = _user(_sensor("s1", "Meter"))
         get_records.return_value = (IMPORTS, EXPORTS)
@@ -103,7 +104,7 @@ def _entity_id(hass: HomeAssistant, unique_id: str) -> str:
 
 async def test_setup_creates_entities(hass, entry, mock_api) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.state is ConfigEntryState.LOADED
 
     consumption = hass.states.get(_entity_id(hass, "s1_energy_import"))
@@ -129,7 +130,7 @@ async def test_newly_paired_sensor_is_added_without_reload(
 ) -> None:
     get_user, get_records = mock_api
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     get_user.return_value = _user(_sensor("s1", "Meter"), _sensor("s2", "Garage"))
     get_records.return_value = (
@@ -137,7 +138,7 @@ async def test_newly_paired_sensor_is_added_without_reload(
         EXPORTS,
     )
     async_fire_time_changed(hass, dt_util.utcnow() + DEFAULT_UPDATE_INTERVAL)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert float(hass.states.get(_entity_id(hass, "s2_energy_import")).state) == 2.0
     # One record is not enough to derive power, and export has no data.
@@ -154,14 +155,14 @@ async def test_newly_paired_sensor_is_added_without_reload(
 async def test_connection_error_retries_setup(hass, entry, mock_api) -> None:
     mock_api[0].side_effect = OBIEnergyConnectionError("down")
     await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
 async def test_auth_error_starts_reauth(hass, entry, mock_api) -> None:
     mock_api[0].side_effect = OBIEnergyAuthError("expired")
     await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert entry.state is ConfigEntryState.SETUP_ERROR
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
@@ -170,7 +171,7 @@ async def test_auth_error_starts_reauth(hass, entry, mock_api) -> None:
 
 async def test_diagnostics_redact_tokens(hass, entry, mock_api) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 

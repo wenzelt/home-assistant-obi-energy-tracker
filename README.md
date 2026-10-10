@@ -12,6 +12,7 @@ Unofficial Home Assistant custom integration for the **OBI ENERGY TRACKER Public
 - Grid-consumption and grid-export counters in kWh
 - `device_class: energy` and `state_class: total_increasing`
 - Derived grid-consumption and grid-export power in W
+- Imports past meter history into long-term statistics for the Energy dashboard
 - Newly paired OBI sensors are added automatically, without a reload
 - Sensor battery and connectivity diagnostics
 - Five-minute cloud polling, matching OBI's meter upload interval
@@ -94,11 +95,26 @@ requests reauthentication if credentials remain invalid.
 
 ## Energy Dashboard
 
-After the first successful update:
+The integration imports your meter's past readings from OBI, so the Energy
+dashboard can show history from before you installed it:
 
 1. Open **Settings → Dashboards → Energy**.
-2. Under **Electricity grid**, select the OBI **Grid consumption** sensor for consumption.
-3. For photovoltaic export, select the OBI **Grid export** sensor under return to grid.
+2. Under **Electricity grid**, add **<meter name> grid consumption** as grid
+   consumption. Pick the entry *without* an entity ID: that is the imported
+   history (`obi_energy_tracker:…_grid_consumption`).
+3. For photovoltaic export, add **<meter name> grid export** under return to grid.
+
+Use either these imported statistics **or** the **Grid consumption**/**Grid
+export** sensors, not both, or energy is counted twice.
+
+How the import works:
+
+- At startup it backfills hourly statistics from when the meter's data became
+  visible in OBI (`dataVisibleSince`), at most one year back, one week per request.
+- Afterwards it adds each completed hour, once an hour. The current hour appears
+  up to an hour later, so for live values use the sensors or power sensors.
+- After a restart it continues from the last imported hour.
+- A drop in the counter is treated as a reset: the new value is counted from zero.
 
 The integration interprets API values as cumulative Wh meter readings and
 converts them to kWh. **The supplied spec does not define the energy unit or
