@@ -48,6 +48,12 @@
       },
       "energy_import": {
         "name": "Netzbezug"
+      },
+      "power_export": {
+        "name": "Netzeinspeisung Leistung"
+      },
+      "power_import": {
+        "name": "Netzbezug Leistung"
       }
     }
   },

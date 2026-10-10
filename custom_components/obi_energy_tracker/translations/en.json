@@ -48,6 +48,12 @@
       },
       "energy_import": {
         "name": "Grid consumption"
+      },
+      "power_export": {
+        "name": "Grid export power"
+      },
+      "power_import": {
+        "name": "Grid consumption power"
       }
     }
   },

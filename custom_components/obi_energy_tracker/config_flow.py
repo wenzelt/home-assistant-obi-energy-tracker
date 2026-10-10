@@ -42,7 +42,7 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Start passwordless authentication."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._email = str(user_input[CONF_EMAIL]).strip()
+            self._email = str(user_input[CONF_EMAIL]).strip().lower()
             self._auth = OBIPasswordlessAuth(async_get_clientsession(self.hass))
             try:
                 await self._auth.async_start(self._email)

@@ -18,9 +18,11 @@ from .api import (
     OBIEnergyError,
 )
 from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
-from .util import parse_obi_timestamp, wh_to_kwh
+from .util import average_power_w, parse_obi_timestamp, wh_to_kwh
 
 _LOGGER = logging.getLogger(__name__)
+
+type OBIEnergyConfigEntry = ConfigEntry[OBIEnergyCoordinator]
 
 
 @dataclass(slots=True)
@@ -34,6 +36,8 @@ class OBIReading:
     export_kwh: float | None
     import_time: Any
     export_time: Any
+    import_power_w: float | None = None
+    export_power_w: float | None = None
 
 
 @dataclass(slots=True)
@@ -51,7 +55,7 @@ class OBIEnergyCoordinator(DataUpdateCoordinator[OBIData]):
     def __init__(
         self,
         hass: HomeAssistant,
-        entry: ConfigEntry,
+        entry: OBIEnergyConfigEntry,
         api: OBIEnergyApi,
     ) -> None:
         super().__init__(
@@ -70,7 +74,7 @@ class OBIEnergyCoordinator(DataUpdateCoordinator[OBIData]):
             if not isinstance(bridge, dict) or not bridge.get("id"):
                 raise UpdateFailed("No OBI Energy Tracker bridge is paired to this account")
 
-            imported, exported = await self.api.async_get_all_latest_measures(
+            imported, exported = await self.api.async_get_all_measure_records(
                 str(bridge["id"])
             )
         except OBIEnergyAuthError as err:
@@ -89,18 +93,12 @@ class OBIEnergyCoordinator(DataUpdateCoordinator[OBIData]):
             if not isinstance(sensor, dict) or not sensor.get("id"):
                 continue
             sensor_id = str(sensor["id"])
-            import_record = imported.get(sensor_id)
-            export_record = exported.get(sensor_id)
-            import_wh = (
-                float(import_record["value"])
-                if import_record and isinstance(import_record.get("value"), (int, float))
-                else None
-            )
-            export_wh = (
-                float(export_record["value"])
-                if export_record and isinstance(export_record.get("value"), (int, float))
-                else None
-            )
+            import_records = imported.get(sensor_id, [])
+            export_records = exported.get(sensor_id, [])
+            import_record = import_records[-1] if import_records else None
+            export_record = export_records[-1] if export_records else None
+            import_wh = float(import_record["value"]) if import_record else None
+            export_wh = float(export_record["value"]) if export_record else None
             readings[sensor_id] = OBIReading(
                 sensor=sensor,
                 import_wh=import_wh,
@@ -108,11 +106,13 @@ class OBIEnergyCoordinator(DataUpdateCoordinator[OBIData]):
                 import_kwh=wh_to_kwh(import_wh),
                 export_kwh=wh_to_kwh(export_wh),
                 import_time=parse_obi_timestamp(
-                    import_record.get("time") if import_record else None
+                    import_record["time"] if import_record else None
                 ),
                 export_time=parse_obi_timestamp(
-                    export_record.get("time") if export_record else None
+                    export_record["time"] if export_record else None
                 ),
+                import_power_w=average_power_w(import_records),
+                export_power_w=average_power_w(export_records),
             )
 
         return OBIData(user=user, bridge=bridge, readings=readings)

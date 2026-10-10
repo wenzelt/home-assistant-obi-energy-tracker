@@ -11,14 +11,12 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import OBIEnergyCoordinator
-from .entity import OBIEnergyEntity
+from .coordinator import OBIEnergyConfigEntry, OBIEnergyCoordinator
+from .entity import OBIEnergyEntity, async_setup_sensor_entities
 
 PARALLEL_UPDATES = 0
 
@@ -57,6 +55,31 @@ ENERGY_DESCRIPTIONS = (
     ),
 )
 
+# Average power over the interval between the two newest counter readings.
+# OBI publishes cumulative counters only, so this is derived, not measured.
+POWER_DESCRIPTIONS = (
+    OBIEnergySensorDescription(
+        key="power_import",
+        translation_key="power_import",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        value_key="import_power_w",
+        time_key="import_time",
+    ),
+    OBIEnergySensorDescription(
+        key="power_export",
+        translation_key="power_export",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        value_key="export_power_w",
+        time_key="export_time",
+    ),
+)
+
 BATTERY_DESCRIPTION = OBIEnergySensorDescription(
     key="battery",
     translation_key="battery",
@@ -69,23 +92,26 @@ BATTERY_DESCRIPTION = OBIEnergySensorDescription(
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: OBIEnergyConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up OBI Energy Tracker sensors."""
-    coordinator: OBIEnergyCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SensorEntity] = []
-    for sensor_id in coordinator.data.readings:
-        entities.extend(
+
+    def _entities(
+        coordinator: OBIEnergyCoordinator, sensor_id: str
+    ) -> list[SensorEntity]:
+        entities: list[SensorEntity] = [
             OBIMeterSensor(coordinator, sensor_id, description)
-            for description in ENERGY_DESCRIPTIONS
-        )
+            for description in (*ENERGY_DESCRIPTIONS, *POWER_DESCRIPTIONS)
+        ]
         entities.append(OBIBatterySensor(coordinator, sensor_id, BATTERY_DESCRIPTION))
-    async_add_entities(entities)
+        return entities
+
+    async_setup_sensor_entities(entry, async_add_entities, _entities)
 
 
 class OBIMeterSensor(OBIEnergyEntity, SensorEntity):
-    """Cumulative import or export energy sensor."""
+    """Import/export energy counter or derived power sensor."""
 
     entity_description: OBIEnergySensorDescription
 

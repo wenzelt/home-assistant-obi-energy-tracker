@@ -7,7 +7,7 @@ import hashlib
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
@@ -97,18 +97,61 @@ def compute_code_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def latest_record(records: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return the newest valid record from an API record sequence."""
+def _record_sort_key(record: dict[str, Any]) -> tuple[int, Any]:
+    """Order records chronologically, falling back to the raw string.
+
+    Offset-free timestamps are treated as UTC so they compare with aware ones.
+    """
+    parsed = parse_obi_timestamp(record["time"])
+    if parsed is None:
+        return (0, record["time"])
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return (1, parsed.timestamp())
+
+
+def valid_records(records: Iterable[Any]) -> list[dict[str, Any]]:
+    """Return well-formed API records sorted from oldest to newest."""
     valid = [
         item
         for item in records
         if isinstance(item, dict)
         and isinstance(item.get("time"), str)
         and isinstance(item.get("value"), (int, float))
+        and not isinstance(item.get("value"), bool)
     ]
-    if not valid:
+    return sorted(valid, key=_record_sort_key)
+
+
+def latest_record(records: Iterable[Any]) -> dict[str, Any] | None:
+    """Return the newest valid record from an API record sequence."""
+    valid = valid_records(records)
+    return valid[-1] if valid else None
+
+
+def average_power_w(records: Iterable[Any]) -> float | None:
+    """Derive average power (W) between the two newest cumulative Wh records.
+
+    Returns ``None`` when there are fewer than two records, the timestamps
+    cannot be compared, or the counter decreased (reset or replaced meter).
+    """
+    valid = valid_records(records)
+    if len(valid) < 2:
         return None
-    return max(valid, key=lambda item: item["time"])
+    previous, latest = valid[-2], valid[-1]
+    start = parse_obi_timestamp(previous["time"])
+    end = parse_obi_timestamp(latest["time"])
+    if start is None or end is None:
+        return None
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=UTC)
+    seconds = (end - start).total_seconds()
+    delta_wh = float(latest["value"]) - float(previous["value"])
+    if seconds <= 0 or delta_wh < 0:
+        return None
+    return round(delta_wh * 3600.0 / seconds, 1)
 
 
 def wh_to_kwh(value: int | float | None) -> float | None:

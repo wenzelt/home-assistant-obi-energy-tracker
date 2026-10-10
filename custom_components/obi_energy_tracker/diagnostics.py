@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.redact import async_redact_data
 
-from .const import CONF_TOKEN, DOMAIN
-from .coordinator import OBIEnergyCoordinator
+from .const import CONF_TOKEN
+from .coordinator import OBIEnergyConfigEntry
 
 TO_REDACT = {
     "email",
@@ -23,11 +22,10 @@ TO_REDACT = {
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: OBIEnergyConfigEntry
 ) -> dict[str, Any]:
     """Return redacted diagnostics for a config entry."""
-    coordinator: OBIEnergyCoordinator = hass.data[DOMAIN][entry.entry_id]
-    data = coordinator.data
+    data = entry.runtime_data.data
     return async_redact_data(
         {
             "entry": dict(entry.data),
@@ -38,6 +36,8 @@ async def async_get_config_entry_diagnostics(
                     "sensor": reading.sensor,
                     "import_wh": reading.import_wh,
                     "export_wh": reading.export_wh,
+                    "import_power_w": reading.import_power_w,
+                    "export_power_w": reading.export_power_w,
                     "import_time": str(reading.import_time),
                     "export_time": str(reading.export_time),
                 }

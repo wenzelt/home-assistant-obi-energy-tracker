@@ -267,13 +267,56 @@ async def test_forbidden_response_raises_response_error_without_retry(session) -
     assert len(session.calls) == 1
 
 
-async def test_server_error_raises_response_error(session) -> None:
-    """A 5xx from the OBI Energy API is a response error, not silently swallowed."""
-    session.queue_response("GET", USER_URL, FakeResponse(status=500))
+@pytest.mark.parametrize("status", [408, 429, 500, 503])
+async def test_transient_server_errors_raise_connection_error(session, status) -> None:
+    """408/429/5xx are temporary outages, reported like auth.py does."""
+    session.queue_response("GET", USER_URL, FakeResponse(status=status))
     api = OBIEnergyApi(session, fresh_token())
 
-    with pytest.raises(OBIEnergyResponseError):
+    with pytest.raises(OBIEnergyConnectionError, match=str(status)):
         await api.async_get_user()
+
+
+async def test_request_timeout_raises_connection_error(session) -> None:
+    """A timed-out request must not escape as a raw TimeoutError."""
+    session.queue_error("GET", USER_URL, TimeoutError())
+    api = OBIEnergyApi(session, fresh_token())
+
+    with pytest.raises(OBIEnergyConnectionError):
+        await api.async_get_user()
+
+
+async def test_refresh_timeout_raises_connection_error(session) -> None:
+    session.queue_error("POST", const.TOKEN_URL, TimeoutError())
+    api = OBIEnergyApi(session, fresh_token(expires_at=time.time() - 5))
+
+    with pytest.raises(OBIEnergyConnectionError):
+        await api.async_get_user()
+
+
+async def test_measure_records_are_sorted_and_filtered(session) -> None:
+    session.queue_response(
+        "GET",
+        MEASURES_URL,
+        FakeResponse(
+            json_payload={
+                "devices": {
+                    "sensor-1": [
+                        {"time": "2024-08-19T00:10:00Z", "value": 1200},
+                        {"time": "bad", "value": "x"},
+                        {"time": "2024-08-19T00:05:00Z", "value": 1100},
+                    ],
+                    "sensor-2": [],
+                }
+            }
+        ),
+    )
+    api = OBIEnergyApi(session, fresh_token())
+
+    result = await api.async_get_measure_records(BRIDGE_ID, "energy")
+
+    assert list(result) == ["sensor-1"]
+    assert [record["value"] for record in result["sensor-1"]] == [1100, 1200]
 
 
 async def test_non_dict_json_payload_raises_response_error(session) -> None:
