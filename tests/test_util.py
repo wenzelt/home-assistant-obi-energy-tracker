@@ -144,3 +144,77 @@ def test_average_power_is_unknown_without_a_usable_interval() -> None:
         {"time": "2024-08-19T00:05:00Z", "value": 10},
     ]
     assert obi_util.average_power_w(counter_reset) is None
+
+
+def _utc(text: str):
+    from datetime import datetime
+
+    return datetime.fromisoformat(text)
+
+
+def test_hourly_energy_buckets_cumulative_counter() -> None:
+    records = [
+        {"time": "2024-08-19 00:00:00.000000000", "value": 1000},
+        {"time": "2024-08-19 00:30:00.000000000", "value": 1100},
+        {"time": "2024-08-19 01:10:00.000000000", "value": 1400},
+        {"time": "2024-08-19 01:50:00.000000000", "value": 1500},
+        {"time": "2024-08-19 02:05:00.000000000", "value": 1600},  # open hour
+    ]
+    hours = obi_util.hourly_energy(
+        records,
+        after=None,
+        until=_utc("2024-08-19T02:00:00+00:00"),
+        last_value_wh=None,
+        last_sum_wh=0.0,
+    )
+    assert [(h.start.hour, h.state_wh, h.sum_wh) for h in hours] == [
+        (0, 1100, 100),
+        (1, 1500, 500),
+    ]
+    assert hours[-1].last_time == _utc("2024-08-19T01:50:00+00:00")
+
+
+def test_hourly_energy_continues_from_previous_import() -> None:
+    records = [
+        {"time": "2024-08-19T00:30:00Z", "value": 1100},  # already imported
+        {"time": "2024-08-19T01:15:00Z", "value": 1300},
+    ]
+    hours = obi_util.hourly_energy(
+        records,
+        after=_utc("2024-08-19T01:00:00+00:00"),
+        until=_utc("2024-08-19T02:00:00+00:00"),
+        last_value_wh=1100,
+        last_sum_wh=100,
+    )
+    assert [(h.state_wh, h.sum_wh) for h in hours] == [(1300, 300)]
+
+
+def test_hourly_energy_counts_value_after_counter_reset() -> None:
+    records = [
+        {"time": "2024-08-19T00:10:00Z", "value": 5000},
+        {"time": "2024-08-19T00:20:00Z", "value": 5200},
+        {"time": "2024-08-19T00:30:00Z", "value": 40},
+    ]
+    hours = obi_util.hourly_energy(
+        records,
+        after=None,
+        until=_utc("2024-08-19T01:00:00+00:00"),
+        last_value_wh=None,
+        last_sum_wh=0.0,
+    )
+    assert hours[0].sum_wh == 240
+
+
+def test_history_windows_cover_range_in_whole_days() -> None:
+    from datetime import timedelta
+
+    windows = obi_util.history_windows(
+        _utc("2024-08-01T05:00:00+00:00"),
+        _utc("2024-08-16T00:00:00+00:00"),
+        timedelta(days=7),
+    )
+    assert windows == [
+        "2024-08-01T05:00:00Z/P7D",
+        "2024-08-08T05:00:00Z/P7D",
+        "2024-08-15T05:00:00Z/P7D",
+    ]

@@ -7,7 +7,7 @@ import hashlib
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
@@ -152,6 +152,80 @@ def average_power_w(records: Iterable[Any]) -> float | None:
     if seconds <= 0 or delta_wh < 0:
         return None
     return round(delta_wh * 3600.0 / seconds, 1)
+
+
+def record_time_utc(record: dict[str, Any]) -> datetime | None:
+    """Return a record's timestamp as an aware UTC datetime.
+
+    Offset-free OBI timestamps are treated as UTC.
+    """
+    parsed = parse_obi_timestamp(record.get("time"))
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+@dataclass
+class HourlyEnergy:
+    """One completed hour of a cumulative Wh counter."""
+
+    start: datetime
+    state_wh: float
+    sum_wh: float
+    last_time: datetime
+
+
+def hourly_energy(
+    records: Iterable[Any],
+    *,
+    after: datetime | None,
+    until: datetime,
+    last_value_wh: float | None,
+    last_sum_wh: float,
+) -> list[HourlyEnergy]:
+    """Fold cumulative Wh counter records into hourly statistics.
+
+    Only records at or after ``after`` and strictly before ``until`` are used,
+    so ``until`` should be the start of the current, still-open hour. ``sum``
+    grows by each counter increase; a decrease is treated as a counter reset,
+    where the new value is counted as consumption since the reset. Without a
+    previous value, the first record only sets the baseline.
+    """
+    hours: dict[datetime, HourlyEnergy] = {}
+    previous = last_value_wh
+    total = last_sum_wh
+    for record in valid_records(records):
+        timestamp = record_time_utc(record)
+        if timestamp is None or timestamp >= until:
+            continue
+        if after is not None and timestamp < after:
+            continue
+        value = float(record["value"])
+        if previous is not None:
+            total += value - previous if value >= previous else value
+        previous = value
+        hour = timestamp.replace(minute=0, second=0, microsecond=0)
+        hours[hour] = HourlyEnergy(
+            start=hour, state_wh=value, sum_wh=total, last_time=timestamp
+        )
+    return [hours[hour] for hour in sorted(hours)]
+
+
+def history_windows(
+    start: datetime, end: datetime, step: timedelta
+) -> list[str]:
+    """Split [start, end) into ISO 8601 ``start/duration`` query windows."""
+    days = step.days
+    if days < 1 or step != timedelta(days=days):
+        raise ValueError("step must be a whole number of days")
+    windows: list[str] = []
+    current = start.astimezone(UTC)
+    while current < end:
+        windows.append(f"{current:%Y-%m-%dT%H:%M:%SZ}/P{days}D")
+        current += step
+    return windows
 
 
 def wh_to_kwh(value: int | float | None) -> float | None:

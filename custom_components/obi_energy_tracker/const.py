@@ -33,4 +33,8 @@ CONF_TOKEN = "token"
 
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=5)
 DEFAULT_HISTORY_DURATION = "PT30M"
+# Backfill at most one year, fetched one week per request.
+HISTORY_IMPORT_MAX_AGE = timedelta(days=365)
+HISTORY_IMPORT_WINDOW = timedelta(days=7)
+HISTORY_IMPORT_INTERVAL = timedelta(hours=1)
 TOKEN_EXPIRY_LEEWAY_SECONDS = 60
