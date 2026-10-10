@@ -96,8 +96,11 @@ async def _check_status(response: Any, stage: str) -> None:
         reason = None
         if stage == "Authorization page" and status == HTTPStatus.BAD_REQUEST:
             # Error pages can contain account data, tokens or request URLs.
-            # Read a small prefix and log only a fixed, locally defined label.
-            body = (await response.content.read(8192)).decode("utf-8", errors="ignore")
+            # Read a bounded prefix and log only a fixed, locally defined label.
+            # Keycloak's message sits after a long <head>, beyond the first 8 KiB.
+            body = (await response.content.read(65536)).decode(
+                "utf-8", errors="ignore"
+            )
             reason = _authorization_failure_reason(body)
         response.release()
         message = f"{stage} returned HTTP {status}"
@@ -184,7 +187,10 @@ class OBIPasswordlessAuth:
             self._otp_action = _validated_auth_url(str(response.url), otp_form.action)
             self._otp_hidden = otp_form.hidden
         except (ClientError, TimeoutError) as err:
-            error = OBIConnectionError("Unable to contact OBI authentication service")
+            error = OBIConnectionError(
+                "Unable to contact OBI authentication service "
+                f"({type(err).__name__})"
+            )
             _LOGGER.warning("OBI login start failed: %s", error)
             raise error from err
         except OBIAuthError as err:
@@ -199,10 +205,10 @@ class OBIPasswordlessAuth:
             raise OBIAuthError("Authentication flow was not started")
 
         try:
-            # Home Assistant's shared session blocks any response containing an
-            # absolute redirect to localhost, even with allow_redirects=False.
-            # OBI intentionally returns that OAuth callback. Request-scoped empty
-            # middleware lets us inspect the Location header without following it.
+            # Home Assistant's shared session can block redirects to some
+            # callback hosts, even with allow_redirects=False. Request-scoped
+            # empty middleware lets us inspect the OAuth callback in the Location
+            # header without following it.
             response = await self._session.post(
                 self._otp_action,
                 data={**self._otp_hidden, "code": otp},

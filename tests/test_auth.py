@@ -30,7 +30,7 @@ AUTHORIZE_URL = const.AUTHORIZE_URL
 TOKEN_URL = const.TOKEN_URL
 EMAIL_FORM_URL = "https://auth.obi.com/login-actions/authenticate"
 OTP_FORM_URL = "https://auth.obi.com/login-actions/authenticate?execution=otp"
-CALLBACK_URL = "http://localhost/callback"
+CALLBACK_URL = const.REDIRECT_URI
 
 
 def email_form_html(action: str = EMAIL_FORM_URL) -> str:

@@ -115,6 +115,23 @@ async def test_authorization_400_reports_only_safe_error_class(body, expected, c
     assert body not in caplog.text
 
 
+async def test_authorization_400_reason_after_long_page_head_is_recognized():
+    """Keycloak's error message follows a long <head>, past the first 8 KiB."""
+    session = FakeSession()
+    head = "<head>" + "<link rel=stylesheet href=/x.css>" * 400 + "</head>"
+    assert len(head) > 8192
+    session.queue_response(
+        "GET",
+        const.AUTHORIZE_URL,
+        FakeResponse(
+            status=400,
+            text_body=f'{head}<p class="instruction">Invalid parameter: redirect_uri</p>',
+        ),
+    )
+    with pytest.raises(auth.OBIAuthError, match="redirect URI"):
+        await auth.OBIPasswordlessAuth(session).async_start("user@example.test")
+
+
 async def test_unknown_authorization_400_does_not_log_server_text(caplog):
     session = FakeSession()
     session.queue_response(
@@ -253,9 +270,10 @@ async def test_unrelated_page_after_otp_is_not_reported_as_invalid_code():
 @pytest.mark.parametrize(
     "callback",
     [
-        "http://localhost/callback-attacker?code=secret",
-        "http://localhost/callback/extra?code=secret",
-        "http://localhost:9999/callback?code=secret",
+        "https://my.home-assistant.io/redirect/oauth-attacker?code=secret",
+        "https://my.home-assistant.io/redirect/oauth/extra?code=secret",
+        "https://my.home-assistant.io:9999/redirect/oauth?code=secret",
+        "http://localhost/callback?code=secret",
     ],
 )
 async def test_callback_must_match_exactly(callback):

@@ -41,6 +41,7 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Start passwordless authentication."""
         errors: dict[str, str] = {}
+        details = ""
         if user_input is not None:
             self._email = str(user_input[CONF_EMAIL]).strip().lower()
             self._auth = OBIPasswordlessAuth(async_get_clientsession(self.hass))
@@ -48,8 +49,11 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self._auth.async_start(self._email)
             except OBIConnectionError:
                 errors["base"] = "cannot_connect"
-            except OBIAuthError:
+            except OBIAuthError as err:
+                # Messages are fixed local text (stage, HTTP status, known
+                # reason), never OBI response bodies, URLs or the email.
                 errors["base"] = "auth_start_failed"
+                details = str(err)
             else:
                 return await self.async_step_otp()
 
@@ -57,6 +61,7 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_EMAIL): str}),
             errors=errors,
+            description_placeholders={"details": details},
         )
 
     async def async_step_otp(
@@ -138,14 +143,18 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Confirm sending a new OTP to the saved email address."""
         errors: dict[str, str] = {}
+        details = ""
         if user_input is not None and self._email:
             self._auth = OBIPasswordlessAuth(async_get_clientsession(self.hass))
             try:
                 await self._auth.async_start(self._email)
             except OBIConnectionError:
                 errors["base"] = "cannot_connect"
-            except OBIAuthError:
+            except OBIAuthError as err:
+                # Messages are fixed local text (stage, HTTP status, known
+                # reason), never OBI response bodies, URLs or the email.
                 errors["base"] = "auth_start_failed"
+                details = str(err)
             else:
                 return await self.async_step_otp()
 
@@ -153,5 +162,5 @@ class OBIEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="reauth_confirm",
             data_schema=vol.Schema({}),
             errors=errors,
-            description_placeholders={"email": self._email or ""},
+            description_placeholders={"email": self._email or "", "details": details},
         )

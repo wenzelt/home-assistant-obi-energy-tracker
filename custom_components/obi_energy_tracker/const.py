@@ -13,7 +13,12 @@ AUTH_BASE_URL = (
 AUTHORIZE_URL = f"{AUTH_BASE_URL}/auth"
 TOKEN_URL = f"{AUTH_BASE_URL}/token"
 CLIENT_ID = "home-assistant-user"
-REDIRECT_URI = "http://localhost/callback"
+# OBI's server now rejects the spec's http://localhost/callback with
+# "Invalid parameter: redirect_uri" and accepts Home Assistant's standard OAuth
+# callback instead (verified 2026-10-10). The integration never follows this
+# redirect; it only reads the authorization code from the Location header.
+REDIRECT_URI = "https://my.home-assistant.io/redirect/oauth"
+SPEC_REDIRECT_URI = "http://localhost/callback"
 # Match the login example in docs/openapi-public.json. Offline access is not
 # documented for this client; do not assume the server grants that scope.
 OAUTH_SCOPE = "openid"

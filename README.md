@@ -27,7 +27,10 @@ There is **no client secret to obtain**. OBI publishes a fixed public OAuth clie
 - Flow: Authorization Code
 - PKCE: S256, required
 - Login: email address followed by a six-character one-time code
-- Redirect URI used by the published flow: `http://localhost/callback`
+- Redirect URI: `https://my.home-assistant.io/redirect/oauth`. OBI's published
+  spec still shows `http://localhost/callback`, but since October 2026 OBI rejects
+  it with `Invalid parameter: redirect_uri`. The integration never opens the
+  redirect; it only reads the login code from it.
 
 During setup, the integration asks for your heyOBI email address and then the OTP sent by OBI. Home Assistant stores the resulting access/refresh token in the config entry. It does not use `secrets.yaml`. Treat Home Assistant's `.storage` directory and backups as sensitive because config-entry data is not designed as an encrypted secret vault.
 
