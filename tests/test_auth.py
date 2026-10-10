@@ -405,3 +405,72 @@ async def test_async_finish_before_start_raises_auth_error(session) -> None:
 
     with pytest.raises(OBIAuthError):
         await auth.async_finish("123456")
+
+
+# --- shared cookie jar -----------------------------------------------------
+
+
+def _seed_cookie(jar, name: str, url: str) -> None:
+    from http.cookies import SimpleCookie
+
+    from yarl import URL
+
+    cookie = SimpleCookie()
+    cookie[name] = "stale"
+    jar.update_cookies(cookie, URL(url))
+
+
+async def test_async_start_forgets_stale_obi_cookies_in_shared_jar(session) -> None:
+    """Leftover Keycloak cookies from an earlier attempt must not be resent.
+
+    Home Assistant's shared session keeps cookies until restart. A stale
+    AUTH_SESSION_ID / KEYCLOAK_IDENTITY makes OBI resume the old attempt or log
+    in silently instead of showing the email form.
+    """
+    from aiohttp import CookieJar
+    from yarl import URL
+
+    session.cookie_jar = CookieJar()
+    _seed_cookie(session.cookie_jar, "AUTH_SESSION_ID", AUTHORIZE_URL)
+    _seed_cookie(session.cookie_jar, "KEYCLOAK_IDENTITY", AUTHORIZE_URL)
+    _seed_cookie(session.cookie_jar, "unrelated", "https://example.com/")
+
+    await start_flow(session)
+
+    assert not session.cookie_jar.filter_cookies(URL(AUTHORIZE_URL))
+    assert session.cookie_jar.filter_cookies(URL("https://example.com/"))
+
+
+async def test_async_finish_keeps_cookies_after_invalid_otp_and_clears_on_success(
+    session,
+) -> None:
+    from aiohttp import CookieJar
+    from yarl import URL
+
+    session.cookie_jar = CookieJar()
+    auth = await start_flow(session)
+    _seed_cookie(session.cookie_jar, "AUTH_SESSION_ID", OTP_FORM_URL)
+
+    session.queue_response(
+        "POST", OTP_FORM_URL, FakeResponse(text_body=otp_form_html(), url=OTP_FORM_URL)
+    )
+    with pytest.raises(OBIInvalidOTP):
+        await auth.async_finish("WRONG1")
+    # The pending login must survive so the user can retry the code.
+    assert session.cookie_jar.filter_cookies(URL(OTP_FORM_URL))
+
+    session.queue_response(
+        "POST",
+        OTP_FORM_URL,
+        FakeResponse(
+            status=302,
+            headers={"Location": f"{CALLBACK_URL}?code=authcode123"},
+            url=OTP_FORM_URL,
+        ),
+    )
+    session.queue_response(
+        "POST", TOKEN_URL, FakeResponse(json_payload={"access_token": "tok-1"})
+    )
+    await auth.async_finish("ABC123")
+
+    assert not session.cookie_jar.filter_cookies(URL(OTP_FORM_URL))

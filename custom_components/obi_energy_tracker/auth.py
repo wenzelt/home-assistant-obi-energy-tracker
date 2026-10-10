@@ -84,6 +84,18 @@ class OBIPasswordlessAuth:
         self._otp_action: str | None = None
         self._otp_hidden: dict[str, str] = {}
 
+    def _clear_session_cookies(self) -> None:
+        """Forget OBI login cookies held by the shared session's cookie jar.
+
+        Home Assistant's shared session keeps cookies until restart. A leftover
+        Keycloak auth-session or SSO cookie from an earlier attempt makes OBI
+        resume that attempt (or log in silently and redirect to the callback)
+        instead of showing the email form, so every retry would fail.
+        """
+        cookie_jar = getattr(self._session, "cookie_jar", None)
+        if cookie_jar is not None and _AUTH_ORIGIN.host:
+            cookie_jar.clear_domain(_AUTH_ORIGIN.host)
+
     def _collect_cookies(self, responses: list[Any]) -> None:
         for response in responses:
             for name, morsel in response.cookies.items():
@@ -91,6 +103,7 @@ class OBIPasswordlessAuth:
 
     async def async_start(self, email: str) -> None:
         """Start the login flow and request an OTP for the email address."""
+        self._clear_session_cookies()
         self._cookies.clear()
         self._otp_action = None
         self._otp_hidden = {}
@@ -224,6 +237,10 @@ class OBIPasswordlessAuth:
 
         if not token.get("access_token"):
             raise OBIAuthError("OBI token response did not include an access token")
+
+        # Do not keep an OBI SSO session around for the next login attempt.
+        self._clear_session_cookies()
+        self._cookies.clear()
 
         result = dict(token)
         if "expires_in" in result:

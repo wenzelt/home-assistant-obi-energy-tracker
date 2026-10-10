@@ -52,6 +52,13 @@ A reconnect prompt means the integration could not continue using the saved
 credentials. It does not prove why they became unusable: expiration, revocation,
 and rejected refresh requests need to be distinguished using the logs.
 
+Before 0.2.0, a failed or abandoned login could leave OBI login cookies in
+Home Assistant's shared HTTP session. Every later attempt then failed with
+"could not start passwordless login" until Home Assistant was restarted. The
+integration now clears those cookies when a login starts and after it
+succeeds. If you are on an older version, restart Home Assistant before
+retrying.
+
 If requesting a new email code fails, look in **Settings → System → Logs** for
 `OBI login start failed`. The warning identifies the failed stage (authorization
 page, email submission, or missing expected form) and HTTP status when available.

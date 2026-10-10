@@ -43,7 +43,7 @@ async def test_user_flow_creates_entry(hass: HomeAssistant) -> None:
         assert result["step_id"] == "user"
 
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {CONF_EMAIL: " user@example.com "}
+            result["flow_id"], {CONF_EMAIL: " User@Example.com "}
         )
         assert result["step_id"] == "otp"
         auth_cls.return_value.async_start.assert_awaited_once_with("user@example.com")
