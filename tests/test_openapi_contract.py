@@ -154,7 +154,11 @@ async def test_authorization_flow_matches_embedded_login_example():
     description = SPEC["info"]["description"]
     oauth_base = re.search(r"^B=(\S+)$", description, re.MULTILINE)[1]
     client_id = re.search(r"^C=(\S+)$", description, re.MULTILINE)[1]
-    redirect = re.search(r"^U=(\S+)$", description, re.MULTILINE)[1]
+    # OBI's live server no longer accepts the spec's redirect URI; see const.py.
+    assert re.search(r"^U=(\S+)$", description, re.MULTILINE)[1] == (
+        const.SPEC_REDIRECT_URI
+    )
+    redirect = const.REDIRECT_URI
     scope = re.search(r"scope=([^&]+)&", description)[1]
     assert oauth_base + "/auth" == const.AUTHORIZE_URL
     assert oauth_base + "/token" == const.TOKEN_URL
