@@ -37,7 +37,7 @@ During setup, the integration asks for your heyOBI email address and then the OT
 
 ## Installation with HACS
 
-Requires Home Assistant 2025.2 or newer.
+Requires Home Assistant 2025.10.0 or newer.
 
 1. In HACS, open the three-dot menu and select **Custom repositories**.
 2. Add `https://github.com/wenzelt/home-assistant-obi-energy-tracker` as category **Integration**.
